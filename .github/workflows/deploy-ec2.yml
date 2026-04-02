@@ -1,18 +1,24 @@
-name: Deploy to AWS
+name: Deploy to EC2
 
 on:
   workflow_run:
     workflows: ["Docker Publish"]
     types: [completed]
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Docker image tag to deploy (e.g. 8-char SHA). Defaults to latest main commit."
+        required: false
+        type: string
 
 permissions:
   id-token: write
   contents: read
 
 concurrency:
-  group: deploy-aws-${{ github.event.workflow_run.head_branch }}
-  cancel-in-progress: true
+  group: deploy-ec2-${{ github.event.workflow_run.head_branch || github.ref_name }}
+  cancel-in-progress: false
 
 env:
   AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
@@ -21,20 +27,37 @@ env:
   SERVICE_NAME: ${{ vars.SERVICE_NAME || 'tsinger' }}
   DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_IMAGE || 'wleonhardt/tsinger' }}
   ORIGIN_SECRET_HEADER_NAME: ${{ vars.ORIGIN_SECRET_HEADER_NAME || 'x-tsinger-origin-secret' }}
+  CF_STACK_NAME: ${{ vars.CF_STACK_NAME || 'TsingerStack' }}
 
 jobs:
   deploy:
-    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' }}
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: production
 
     env:
-      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+      HEAD_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
       AWS_DEPLOY_ROLE_ARN: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
       AWS_ORIGIN_SECRET: ${{ secrets.AWS_ORIGIN_SECRET }}
 
     steps:
+      - name: Resolve image tag
+        id: tag
+        run: |
+          if [[ -n "${INPUT_TAG}" ]]; then
+            echo "image_tag=${INPUT_TAG}" >> "$GITHUB_OUTPUT"
+            echo "Using manual image tag: ${INPUT_TAG}"
+          else
+            SHORT_SHA="${HEAD_SHA::8}"
+            echo "image_tag=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+            echo "Using commit SHA tag: ${SHORT_SHA}"
+          fi
+        env:
+          INPUT_TAG: ${{ inputs.image_tag }}
+
       - name: Validate deployment configuration
         run: |
           : "${AWS_DEPLOY_ROLE_ARN:?Set secret AWS_DEPLOY_ROLE_ARN}"
@@ -46,7 +69,7 @@ jobs:
           : "${AWS_ORIGIN_SECRET:?Set secret AWS_ORIGIN_SECRET}"
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ env.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
@@ -59,10 +82,10 @@ jobs:
         id: image
         env:
           ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          IMAGE_TAG: ${{ steps.tag.outputs.image_tag }}
         run: |
-          SHORT_SHA="${HEAD_SHA::8}"
-          DOCKERHUB_REF="${DOCKERHUB_IMAGE}:${SHORT_SHA}"
-          ECR_IMAGE="${ECR_REGISTRY}/${ECR_REPO}:${SHORT_SHA}"
+          DOCKERHUB_REF="${DOCKERHUB_IMAGE}:${IMAGE_TAG}"
+          ECR_IMAGE="${ECR_REGISTRY}/${ECR_REPO}:${IMAGE_TAG}"
           ECR_MAIN="${ECR_REGISTRY}/${ECR_REPO}:main"
 
           docker pull "${DOCKERHUB_REF}"
@@ -71,18 +94,18 @@ jobs:
           docker push "${ECR_IMAGE}"
           docker push "${ECR_MAIN}"
 
-          echo "image=${ECR_IMAGE}" >> "$GITHUB_OUTPUT"
-          echo "### Pushed to ECR" >> "$GITHUB_STEP_SUMMARY"
-          echo "- \`${ECR_IMAGE}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- \`${ECR_MAIN}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "ecr_image=${ECR_IMAGE}" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### Pushed to ECR"
+            echo "- \`${ECR_IMAGE}\`"
+            echo "- \`${ECR_MAIN}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Deploy to EC2 via SSM
         env:
-          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          ECR_IMAGE: ${{ steps.image.outputs.ecr_image }}
         run: |
-          SHORT_SHA="${HEAD_SHA::8}"
-          ECR_IMAGE="${ECR_REGISTRY}/${ECR_REPO}:${SHORT_SHA}"
-
           DEPLOY_SCRIPT=$(cat <<'SCRIPT'
           set -euxo pipefail
           IMAGE="__IMAGE__"
@@ -146,9 +169,13 @@ jobs:
             echo "Attempt $i: $STATUS"
 
             if [ "$STATUS" = "Success" ]; then
-              echo "### Deployed successfully" >> "$GITHUB_STEP_SUMMARY"
-              echo "- Instance: \`${INSTANCE_ID}\`" >> "$GITHUB_STEP_SUMMARY"
-              echo "- Image: \`${ECR_IMAGE}\`" >> "$GITHUB_STEP_SUMMARY"
+              {
+                echo "### Deployed successfully"
+                echo "- **Image:** \`${ECR_IMAGE}\`"
+                echo "- **Instance:** \`${INSTANCE_ID}\`"
+                echo "- **Stack:** \`${CF_STACK_NAME}\`"
+                echo "- **Service:** \`${SERVICE_NAME}\`"
+              } >> "$GITHUB_STEP_SUMMARY"
               exit 0
             elif [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ] || [ "$STATUS" = "TimedOut" ]; then
               echo "Command failed with status: $STATUS"
@@ -170,9 +197,13 @@ jobs:
         if: always()
         run: |
           {
-            echo "### Deployment inputs"
-            echo "- Region: \`${AWS_REGION}\`"
-            echo "- Instance: \`${INSTANCE_ID}\`"
-            echo "- Service: \`${SERVICE_NAME}\`"
-            echo "- ECR repo: \`${ECR_REPO}\`"
+            echo "### Deployment configuration"
+            echo "| Parameter | Value |"
+            echo "|-----------|-------|"
+            echo "| Region | \`${AWS_REGION}\` |"
+            echo "| Stack | \`${CF_STACK_NAME}\` |"
+            echo "| Instance | \`${INSTANCE_ID}\` |"
+            echo "| Service | \`${SERVICE_NAME}\` |"
+            echo "| ECR repo | \`${ECR_REPO}\` |"
+            echo "| Image tag | \`${{ steps.tag.outputs.image_tag }}\` |"
           } >> "$GITHUB_STEP_SUMMARY"

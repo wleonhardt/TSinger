@@ -35,6 +35,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Typecheck
+        run: npm run typecheck
+
       - name: Build project
         run: npm run build
 
@@ -65,16 +68,27 @@ jobs:
         run: |
           for attempt in $(seq 1 20); do
             if curl -fsS http://127.0.0.1:8080/healthz | grep -q 'ok'; then
+              echo "Health check passed on attempt $attempt"
               exit 0
             fi
             sleep 2
           done
-          echo "Container failed health check"
+          echo "Container failed health check after 20 attempts"
           docker logs tsinger-ci
           exit 1
 
       - name: Verify root document
         run: curl -fsS http://127.0.0.1:8080/ | grep -qi '<!doctype html'
+
+      - name: Verify SPA deep-link routing
+        run: |
+          STATUS=$(curl -o /dev/null -s -w '%{http_code}' http://127.0.0.1:8080/some/fake/path)
+          if [ "$STATUS" != "200" ]; then
+            echo "SPA routing failed: GET /some/fake/path returned $STATUS (expected 200)"
+            exit 1
+          fi
+          curl -fsS http://127.0.0.1:8080/some/fake/path | grep -qi '<!doctype html'
+          echo "SPA deep-link routing verified"
 
       - name: Stop container
         if: always()

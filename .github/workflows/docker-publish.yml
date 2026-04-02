@@ -5,12 +5,13 @@ on:
     workflows: ["CI"]
     types: [completed]
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: docker-publish-${{ github.event.workflow_run.head_branch }}
+  group: docker-publish-${{ github.event.workflow_run.head_branch || github.ref_name }}
   cancel-in-progress: true
 
 env:
@@ -18,22 +19,33 @@ env:
   DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_IMAGE || 'wleonhardt/tsinger' }}
 
 jobs:
-  docker:
-    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' }}
+  publish:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    outputs:
+      short_sha: ${{ steps.vars.outputs.short_sha }}
+      image_main: ${{ steps.vars.outputs.image_main }}
+      image_sha: ${{ steps.vars.outputs.image_sha }}
 
     steps:
       - name: Check out repo
         uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Compute image tags
         id: vars
-        run: echo "short_sha=${GITHUB_HEAD_SHA::8}" >> "$GITHUB_OUTPUT"
+        run: |
+          COMMIT_SHA="${SOURCE_SHA}"
+          SHORT_SHA="${COMMIT_SHA::8}"
+          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "image_sha=${DOCKERHUB_IMAGE}:${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "image_main=${DOCKERHUB_IMAGE}:main" >> "$GITHUB_OUTPUT"
         env:
-          GITHUB_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -51,5 +63,21 @@ jobs:
           push: true
           platforms: ${{ env.DOCKER_PLATFORM }}
           tags: |
-            ${{ env.DOCKERHUB_IMAGE }}:${{ steps.vars.outputs.short_sha }}
-            ${{ env.DOCKERHUB_IMAGE }}:main
+            ${{ steps.vars.outputs.image_sha }}
+            ${{ steps.vars.outputs.image_main }}
+
+      - name: Job summary
+        run: |
+          {
+            echo "### Docker images published"
+            echo "| Tag | Image |"
+            echo "|-----|-------|"
+            echo "| SHA | \`${IMAGE_SHA}\` |"
+            echo "| main | \`${IMAGE_MAIN}\` |"
+            echo ""
+            echo "Commit: \`${SHORT_SHA}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          IMAGE_SHA: ${{ steps.vars.outputs.image_sha }}
+          IMAGE_MAIN: ${{ steps.vars.outputs.image_main }}
+          SHORT_SHA: ${{ steps.vars.outputs.short_sha }}
