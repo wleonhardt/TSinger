@@ -1,0 +1,178 @@
+name: Deploy to AWS
+
+on:
+  workflow_run:
+    workflows: ["Docker Publish"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy-aws-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: true
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  ECR_REPO: ${{ vars.ECR_REPO || 'tsinger' }}
+  INSTANCE_ID: ${{ vars.INSTANCE_ID || '' }}
+  SERVICE_NAME: ${{ vars.SERVICE_NAME || 'tsinger' }}
+  DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_IMAGE || 'wleonhardt/tsinger' }}
+  ORIGIN_SECRET_HEADER_NAME: ${{ vars.ORIGIN_SECRET_HEADER_NAME || 'x-tsinger-origin-secret' }}
+
+jobs:
+  deploy:
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+
+    env:
+      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+      AWS_DEPLOY_ROLE_ARN: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+      AWS_ORIGIN_SECRET: ${{ secrets.AWS_ORIGIN_SECRET }}
+
+    steps:
+      - name: Validate deployment configuration
+        run: |
+          : "${AWS_DEPLOY_ROLE_ARN:?Set secret AWS_DEPLOY_ROLE_ARN}"
+          : "${INSTANCE_ID:?Set repo variable INSTANCE_ID}"
+          : "${ECR_REPO:?Set repo variable ECR_REPO}"
+          : "${SERVICE_NAME:?Set repo variable SERVICE_NAME}"
+          : "${DOCKERHUB_IMAGE:?Set repo variable DOCKERHUB_IMAGE}"
+          : "${ORIGIN_SECRET_HEADER_NAME:?Set repo variable ORIGIN_SECRET_HEADER_NAME}"
+          : "${AWS_ORIGIN_SECRET:?Set secret AWS_ORIGIN_SECRET}"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Pull from Docker Hub and push to ECR
+        id: image
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+        run: |
+          SHORT_SHA="${HEAD_SHA::8}"
+          DOCKERHUB_REF="${DOCKERHUB_IMAGE}:${SHORT_SHA}"
+          ECR_IMAGE="${ECR_REGISTRY}/${ECR_REPO}:${SHORT_SHA}"
+          ECR_MAIN="${ECR_REGISTRY}/${ECR_REPO}:main"
+
+          docker pull "${DOCKERHUB_REF}"
+          docker tag "${DOCKERHUB_REF}" "${ECR_IMAGE}"
+          docker tag "${DOCKERHUB_REF}" "${ECR_MAIN}"
+          docker push "${ECR_IMAGE}"
+          docker push "${ECR_MAIN}"
+
+          echo "image=${ECR_IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "### Pushed to ECR" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`${ECR_IMAGE}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`${ECR_MAIN}\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Deploy to EC2 via SSM
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+        run: |
+          SHORT_SHA="${HEAD_SHA::8}"
+          ECR_IMAGE="${ECR_REGISTRY}/${ECR_REPO}:${SHORT_SHA}"
+
+          DEPLOY_SCRIPT=$(cat <<'SCRIPT'
+          set -euxo pipefail
+          IMAGE="__IMAGE__"
+          SERVICE_NAME="__SERVICE_NAME__"
+          ORIGIN_SECRET="__ORIGIN_SECRET__"
+          ORIGIN_SECRET_HEADER_NAME="__ORIGIN_SECRET_HEADER_NAME__"
+          RUN_SCRIPT="/usr/local/bin/${SERVICE_NAME}-run.sh"
+          UNIT_NAME="${SERVICE_NAME}.service"
+
+          sed -i "s|^IMAGE_IDENTIFIER=.*|IMAGE_IDENTIFIER=\"${IMAGE}\"|" "${RUN_SCRIPT}"
+          grep IMAGE_IDENTIFIER "${RUN_SCRIPT}"
+
+          systemctl restart "${UNIT_NAME}"
+
+          echo "Waiting for TSinger to become healthy..."
+          n=0
+          while [ $n -lt 18 ]; do
+            n=$((n+1))
+            sleep 5
+            if curl -fsS -H "${ORIGIN_SECRET_HEADER_NAME}: ${ORIGIN_SECRET}" http://127.0.0.1/healthz >/dev/null; then
+              echo "Health check passed on attempt $n"
+              exit 0
+            fi
+            echo "Attempt $n: not ready"
+          done
+
+          echo "HEALTH CHECK FAILED after 90s"
+          systemctl status "${UNIT_NAME}" --no-pager 2>&1 || true
+          docker logs tsinger --tail 50 2>&1 || true
+          exit 1
+          SCRIPT
+          )
+
+          DEPLOY_SCRIPT="${DEPLOY_SCRIPT//__IMAGE__/$ECR_IMAGE}"
+          DEPLOY_SCRIPT="${DEPLOY_SCRIPT//__SERVICE_NAME__/$SERVICE_NAME}"
+          DEPLOY_SCRIPT="${DEPLOY_SCRIPT//__ORIGIN_SECRET__/$AWS_ORIGIN_SECRET}"
+          DEPLOY_SCRIPT="${DEPLOY_SCRIPT//__ORIGIN_SECRET_HEADER_NAME__/$ORIGIN_SECRET_HEADER_NAME}"
+
+          jq -n --arg script "$DEPLOY_SCRIPT" '{"commands": [$script]}' > /tmp/ssm-params.json
+
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name "AWS-RunShellScript" \
+            --parameters file:///tmp/ssm-params.json \
+            --timeout-seconds 300 \
+            --query 'Command.CommandId' \
+            --output text)
+
+          echo "SSM Command ID: ${COMMAND_ID}"
+
+          for i in $(seq 1 30); do
+            STATUS=$(aws ssm get-command-invocation \
+              --command-id "$COMMAND_ID" \
+              --instance-id "$INSTANCE_ID" \
+              --query 'Status' \
+              --output text 2>&1) || {
+              echo "Warning: get-command-invocation failed: $STATUS"
+              STATUS="Pending"
+            }
+
+            echo "Attempt $i: $STATUS"
+
+            if [ "$STATUS" = "Success" ]; then
+              echo "### Deployed successfully" >> "$GITHUB_STEP_SUMMARY"
+              echo "- Instance: \`${INSTANCE_ID}\`" >> "$GITHUB_STEP_SUMMARY"
+              echo "- Image: \`${ECR_IMAGE}\`" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            elif [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ] || [ "$STATUS" = "TimedOut" ]; then
+              echo "Command failed with status: $STATUS"
+              aws ssm get-command-invocation \
+                --command-id "$COMMAND_ID" \
+                --instance-id "$INSTANCE_ID" \
+                --query '{StdOut:StandardOutputContent,StdErr:StandardErrorContent}' \
+                --output json
+              exit 1
+            fi
+
+            sleep 10
+          done
+
+          echo "Timed out waiting for SSM command"
+          exit 1
+
+      - name: Deployment summary
+        if: always()
+        run: |
+          {
+            echo "### Deployment inputs"
+            echo "- Region: \`${AWS_REGION}\`"
+            echo "- Instance: \`${INSTANCE_ID}\`"
+            echo "- Service: \`${SERVICE_NAME}\`"
+            echo "- ECR repo: \`${ECR_REPO}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,55 @@
+name: Docker Publish
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-publish-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: true
+
+env:
+  DOCKER_PLATFORM: ${{ vars.DOCKER_PLATFORM || 'linux/amd64' }}
+  DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_IMAGE || 'wleonhardt/tsinger' }}
+
+jobs:
+  docker:
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Compute image tags
+        id: vars
+        run: echo "short_sha=${GITHUB_HEAD_SHA::8}" >> "$GITHUB_OUTPUT"
+        env:
+          GITHUB_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          platforms: ${{ env.DOCKER_PLATFORM }}
+          tags: |
+            ${{ env.DOCKERHUB_IMAGE }}:${{ steps.vars.outputs.short_sha }}
+            ${{ env.DOCKERHUB_IMAGE }}:main

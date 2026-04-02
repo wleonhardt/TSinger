@@ -1,0 +1,8 @@
+node_modules/
+dist/
+cdk/node_modules/
+cdk/dist/
+cdk/cdk.out/
+.git/
+.github/
+.DS_Store
