@@ -1,5 +1,6 @@
 import type { Composition } from "../composition";
 import { isChordTone, isScaleTone } from "../authoring/harmony";
+import { describeSwingProfile } from "../authoring/timing";
 import { getPitchClass, midiToNote } from "../theory";
 import { describeVoiceId, isLeadVoiceId } from "../voiceIdentity";
 import { findActiveChordAtBeat, mergeAllScheduledEvents } from "./collectEvents";
@@ -540,5 +541,14 @@ export function analyzeSymbolically(
       weightSum > 0 ? Number((weightedMidiSum / weightSum).toFixed(3)) : null,
     cadenceStrengthByBar,
     duplicateEventWarnings,
+    timing:
+      composition.timing ?? {
+        meter: { beatsPerBar: composition.beatsPerBar, beatUnit: 4 },
+        swing: { kind: "straight" },
+        summary: `${composition.beatsPerBar}/4 meter, ${describeSwingProfile({ kind: "straight" })}.`,
+        symbolicPlacementCount: 0,
+        insights: [],
+        issues: [],
+      },
   };
 }

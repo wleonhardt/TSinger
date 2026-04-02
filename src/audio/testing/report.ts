@@ -55,6 +55,7 @@ function buildOverviewLines(analysis: PresetAnalysis): string[] {
     `- Pitch range: ${analysis.symbolic.pitchRange.min ?? "n/a"} to ${analysis.symbolic.pitchRange.max ?? "n/a"}`,
     `- Chord-tone ratio: ${(analysis.symbolic.chordToneRatio * 100).toFixed(1)}%; repeated-pitch ratio ${(analysis.symbolic.repeatedPitchRatio * 100).toFixed(1)}%`,
     `- Mean novelty by bar: ${average(analysis.audio.noveltyByBar).toFixed(4)}; final cadence strength ${finalCadence.toFixed(3)}`,
+    `- Timing: ${analysis.symbolic.timing.summary} ${analysis.symbolic.timing.symbolicPlacementCount} symbolic placements compiled.`,
   ];
 
   if (strongestCadenceSection) {
@@ -112,6 +113,11 @@ function buildWarningLines(analysis: PresetAnalysis): string[] {
     .map((warning) => `- [${warning.severity}] ${warning.code}: ${warning.message}`);
 
   lines.push(
+    ...analysis.symbolic.timing.issues
+      .slice(0, 3)
+      .map((issue) => `- [${issue.level}] timing: ${issue.message}`),
+  );
+  lines.push(
     ...analysis.symbolic.highRegisterDissonanceWarnings
       .slice(0, 2)
       .map((warning) => `- [warning] harshness: ${warning}`),
@@ -127,6 +133,22 @@ function buildWarningLines(analysis: PresetAnalysis): string[] {
   }
 
   return [...new Set(lines)].slice(0, 6);
+}
+
+function buildTimingLines(analysis: PresetAnalysis): string[] {
+  const timing = analysis.symbolic.timing;
+  const lines = [
+    `- ${timing.summary}`,
+    `- Symbolic placements compiled: ${timing.symbolicPlacementCount}`,
+  ];
+
+  if (timing.insights.length > 0) {
+    lines.push(...timing.insights.slice(0, 5).map((insight) => `- ${insight.message}`));
+  } else {
+    lines.push("- No explicit timing annotations were attached to this preset.");
+  }
+
+  return lines;
 }
 
 function buildRoughnessCauseLine(cause: RoughnessCause): string {
@@ -218,6 +240,12 @@ export function buildSuggestedMusicalEdits(analysis: PresetAnalysis): string[] {
     );
   }
 
+  if (analysis.symbolic.timing.issues.length > 0) {
+    suggestions.push(
+      "Fix the timing-boundary warnings first so pickups, returns, and cadence landings stay metrically intentional.",
+    );
+  }
+
   if (analysis.audio.clippingSampleCount > 0) {
     suggestions.push(
       "Reduce overlapping peak moments or ease the loudest simultaneous entries so the rendered mix keeps clean headroom.",
@@ -253,6 +281,10 @@ export function buildPresetReport(analysis: PresetAnalysis): string {
     "## Voices",
     "",
     ...buildVoiceSummaryLines(analysis),
+    "",
+    "## Timing",
+    "",
+    ...buildTimingLines(analysis),
     "",
     "## Warnings",
     "",

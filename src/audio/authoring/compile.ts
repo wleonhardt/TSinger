@@ -17,6 +17,24 @@ import {
 } from "./arrangement";
 import { compileSections, findSectionAtBeat } from "./sections";
 import {
+  addSpan,
+  absoluteBeatToPosition,
+  type BoundaryTarget,
+  cadenceBeat,
+  describeBoundaryTarget,
+  describeSwingProfile,
+  normalizeMeter,
+  normalizeSwingProfile,
+  positionToBeats,
+  resolvePhraseBoundary,
+  spanToBeats,
+  type MeterSpec,
+  type Position,
+  type SwingProfile,
+  type TimingIntent,
+  type TimingMetadata,
+} from "./timing";
+import {
   type CompiledPhrase,
   type DraftLayerPlan,
   type HarmonyPlanItem,
@@ -38,6 +56,15 @@ type ExpandedHarmonySpan = HarmonyPlanItem & {
   endBeat: number;
 };
 
+type TimingCompilationState = {
+  meter: MeterSpec;
+  swing: SwingProfile;
+  symbolicPlacementCount: number;
+  insights: TimingMetadata["insights"];
+  issues: TimingMetadata["issues"];
+  seenIntentKeys: Set<string>;
+};
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
@@ -48,6 +75,362 @@ function modulo(value: number, size: number): number {
 
 function roundToGrid(value: number): number {
   return Number(value.toFixed(4));
+}
+
+function createTimingState(plan: PhrasePlan): TimingCompilationState {
+  const normalizedMeter = normalizeMeter({
+    beatsPerBar: plan.beatsPerBar,
+    beatUnit: plan.meter?.beatUnit ?? 4,
+    pickupBeats: plan.meter?.pickupBeats,
+  });
+
+  return {
+    meter: normalizedMeter,
+    swing: normalizeSwingProfile(plan.swing),
+    symbolicPlacementCount: 0,
+    insights: [
+      {
+        kind: "swing",
+        message: `Timing grid: ${normalizedMeter.beatsPerBar}/${normalizedMeter.beatUnit} with ${describeSwingProfile(plan.swing)}.`,
+      },
+    ],
+    issues:
+      plan.meter && plan.meter.beatsPerBar !== plan.beatsPerBar
+        ? [
+            {
+              code: "meter-mismatch",
+              level: "warning",
+              message: `Meter beatsPerBar (${plan.meter.beatsPerBar}) did not match phrase beatsPerBar (${plan.beatsPerBar}); compile used ${plan.beatsPerBar}.`,
+            },
+          ]
+        : [],
+    seenIntentKeys: new Set(),
+  };
+}
+
+function buildTimingMetadata(state: TimingCompilationState): TimingMetadata {
+  return {
+    meter: state.meter,
+    swing: state.swing,
+    summary: `${state.meter.beatsPerBar}/${state.meter.beatUnit} meter, ${describeSwingProfile(state.swing)}.`,
+    symbolicPlacementCount: state.symbolicPlacementCount,
+    insights: state.insights,
+    issues: state.issues,
+  };
+}
+
+function incrementSymbolicCount(
+  state: TimingCompilationState,
+  enabled: boolean,
+): void {
+  if (enabled) {
+    state.symbolicPlacementCount += 1;
+  }
+}
+
+function resolveGlobalBeat(
+  beat: number,
+  at: Position | undefined,
+  state: TimingCompilationState,
+): number {
+  if (at) {
+    incrementSymbolicCount(state, true);
+    return positionToBeats(at, state.meter, state.swing);
+  }
+
+  return beat;
+}
+
+function resolveGlobalLength(
+  startBeat: number,
+  at: Position | undefined,
+  length: number,
+  duration: PatternNoteDraft["duration"],
+  state: TimingCompilationState,
+): number {
+  if (duration) {
+    const startPosition = at ?? absoluteBeatToPosition(startBeat, state.meter, state.swing);
+    incrementSymbolicCount(state, true);
+    const endPosition = addSpan(startPosition, duration, state.meter);
+    return positionToBeats(endPosition, state.meter, state.swing) -
+      positionToBeats(startPosition, state.meter, state.swing);
+  }
+
+  return length;
+}
+
+function resolveLocalBeat(beat: number, state: TimingCompilationState): number {
+  return beat;
+}
+
+function resolveBoundaryBeat(
+  target: BoundaryTarget,
+  intentKind: "cadence" | "pickup" | "boundary",
+  state: TimingCompilationState,
+): number {
+  const position =
+    intentKind === "cadence"
+      ? cadenceBeat(target, state.meter)
+      : resolvePhraseBoundary(target, state.meter);
+  return positionToBeats(position, state.meter, state.swing);
+}
+
+function pushTimingInsight(
+  state: TimingCompilationState,
+  key: string,
+  insight: TimingMetadata["insights"][number],
+): void {
+  if (state.seenIntentKeys.has(key)) {
+    return;
+  }
+
+  state.seenIntentKeys.add(key);
+  state.insights.push(insight);
+}
+
+function pushTimingIssue(
+  state: TimingCompilationState,
+  issue: TimingMetadata["issues"][number],
+): void {
+  state.issues.push(issue);
+}
+
+function formatBeatForMessage(
+  beat: number,
+  state: TimingCompilationState,
+): string {
+  const position = absoluteBeatToPosition(beat, state.meter, state.swing);
+  const subdivision =
+    position.subdivision !== undefined && position.subdivisionUnit !== undefined
+      ? ` + ${position.subdivision}/${position.subdivisionUnit}`
+      : "";
+
+  return `bar ${position.bar}, beat ${position.beat}${subdivision}`;
+}
+
+function resolvePatternIntent(
+  intent: TimingIntent | undefined,
+  actualBeat: number,
+  layerId: string,
+  state: TimingCompilationState,
+): void {
+  if (!intent) {
+    return;
+  }
+
+  if (intent.kind === "repeat") {
+    pushTimingInsight(
+      state,
+      `${layerId}:repeat:${intent.startBar}:${intent.everyBars}:${intent.repetitions}:${intent.label ?? ""}`,
+      {
+        kind: "repeat",
+        layerId,
+        beat: actualBeat,
+        message:
+          intent.label ??
+          `${layerId} repeats every ${intent.everyBars === 1 ? "bar" : `${intent.everyBars} bars`} for ${intent.repetitions} passes and stays bar-aligned.`,
+      },
+    );
+    return;
+  }
+
+  const expectedBeat = resolveBoundaryBeat(intent.target, intent.kind, state);
+  const delta = Math.abs(expectedBeat - actualBeat);
+  const boundaryText = describeBoundaryTarget(intent.target);
+
+  if (intent.kind === "pickup") {
+    const expectedPickupBeat = positionToBeats(
+      addSpan(resolvePhraseBoundary(intent.target, state.meter), {
+        bars: intent.distance.bars !== undefined ? -intent.distance.bars : undefined,
+        beats: intent.distance.beats !== undefined ? -intent.distance.beats : undefined,
+        subdivisions:
+          intent.distance.subdivisions !== undefined ? -intent.distance.subdivisions : undefined,
+        subdivisionUnit: intent.distance.subdivisionUnit,
+      }, state.meter),
+      state.meter,
+      state.swing,
+    );
+    const pickupDelta = Math.abs(expectedPickupBeat - actualBeat);
+    if (pickupDelta <= 0.01) {
+      pushTimingInsight(
+        state,
+        `${layerId}:pickup:${expectedPickupBeat.toFixed(3)}:${intent.label ?? ""}`,
+        {
+          kind: "pickup",
+          layerId,
+          beat: actualBeat,
+          message:
+            intent.label ??
+            `${layerId} pickup lands ${intent.distance.subdivisions === 1 && intent.distance.subdivisionUnit === 2 ? "one 8th" : "in pickup space"} before ${boundaryText}.`,
+        },
+      );
+    } else {
+      pushTimingIssue(state, {
+        code: "pickup-misalignment",
+        level: "warning",
+        layerId,
+        beat: actualBeat,
+        message: `${layerId} pickup missed ${boundaryText} by ${pickupDelta.toFixed(3)} beats.`,
+      });
+    }
+    return;
+  }
+
+  if (delta <= 0.01) {
+    pushTimingInsight(
+      state,
+      `${layerId}:${intent.kind}:${expectedBeat.toFixed(3)}:${intent.label ?? ""}`,
+      {
+        kind: intent.kind,
+        layerId,
+        beat: actualBeat,
+        message:
+          intent.label ??
+          `${layerId} ${intent.kind === "cadence" ? "resolves" : "lands"} on ${boundaryText} as intended.`,
+      },
+    );
+    return;
+  }
+
+  pushTimingIssue(state, {
+    code: `${intent.kind}-misalignment`,
+    level: "warning",
+    layerId,
+    beat: actualBeat,
+    message: `${layerId} ${intent.kind} target missed ${boundaryText} by ${delta.toFixed(3)} beats.`,
+  });
+}
+
+function normalizeArrangement(
+  plan: PhrasePlan,
+  state: TimingCompilationState,
+): PhrasePlan["arrangement"] {
+  if (!plan.arrangement) {
+    return plan.arrangement;
+  }
+
+  const resolvePoints = (
+    points: NonNullable<PhrasePlan["arrangement"]>["densityCurve"],
+  ) =>
+    points?.map((point) => {
+      incrementSymbolicCount(state, point.at !== undefined);
+      return {
+        ...point,
+        beat:
+          point.at !== undefined
+            ? positionToBeats(point.at, state.meter, state.swing)
+            : point.beat,
+      };
+    });
+
+  return {
+    densityCurve: resolvePoints(plan.arrangement.densityCurve),
+    registerCurve: resolvePoints(plan.arrangement.registerCurve),
+    brightnessCurve: resolvePoints(plan.arrangement.brightnessCurve),
+    cadenceCurve: resolvePoints(plan.arrangement.cadenceCurve),
+    ornamentBaseProbability: plan.arrangement.ornamentBaseProbability,
+  };
+}
+
+function normalizeDraftLayer(
+  layer: DraftLayerPlan,
+  state: TimingCompilationState,
+): DraftLayerPlan {
+  return {
+    ...layer,
+    notes: layer.notes.map((note) => {
+      const beat = resolveGlobalBeat(note.beat, note.at, state);
+      const length = resolveGlobalLength(beat, note.at, note.length, note.duration, state);
+
+      return {
+        ...note,
+        beat,
+        length,
+      };
+    }),
+  };
+}
+
+function normalizeMotifLayer(
+  layer: MotifLayerPlan,
+  state: TimingCompilationState,
+): MotifLayerPlan {
+  incrementSymbolicCount(state, layer.positionOffset !== undefined);
+  incrementSymbolicCount(state, layer.repeatEvery !== undefined);
+  const beatOffset =
+    (layer.beatOffset ?? 0) +
+    (layer.positionOffset
+      ? positionToBeats(layer.positionOffset, state.meter, state.swing)
+      : 0);
+
+  return {
+    ...layer,
+    beatOffset,
+    repeatEveryBeats:
+      layer.repeatEvery !== undefined
+        ? spanToBeats(layer.repeatEvery, state.meter, state.swing)
+        : layer.repeatEveryBeats,
+  };
+}
+
+function normalizePhrasePlan(
+  plan: PhrasePlan,
+  state: TimingCompilationState,
+): PhrasePlan {
+  return {
+    ...plan,
+    arrangement: normalizeArrangement(plan, state),
+    noteLayers: plan.noteLayers?.map((layer) =>
+      layer.kind === "motif"
+        ? normalizeMotifLayer(layer, state)
+        : normalizeDraftLayer(layer, state),
+    ),
+  };
+}
+
+function validateCompiledTimingBounds(
+  notes: NoteEvent[],
+  chords: ChordEvent[],
+  plan: PhrasePlan,
+  state: TimingCompilationState,
+): void {
+  const phraseBeats = plan.bars * plan.beatsPerBar;
+  const allEvents = [
+    ...notes.map((note) => ({
+      layerId: note.layerId ?? note.synth,
+      beat: note.beat,
+      endBeat: note.beat + note.length,
+      type: "note" as const,
+    })),
+    ...chords.map((chord) => ({
+      layerId: chord.layerId ?? chord.synth,
+      beat: chord.beat,
+      endBeat: chord.beat + chord.length,
+      type: "chord" as const,
+    })),
+  ];
+
+  for (const event of allEvents) {
+    if (event.beat < -0.0001) {
+      pushTimingIssue(state, {
+        code: "negative-start",
+        level: "warning",
+        layerId: event.layerId,
+        beat: event.beat,
+        message: `${event.layerId} starts before the phrase at ${formatBeatForMessage(event.beat, state)}.`,
+      });
+    }
+
+    if (event.endBeat > phraseBeats + 0.0001) {
+      pushTimingIssue(state, {
+        code: "phrase-overrun",
+        level: "warning",
+        layerId: event.layerId,
+        beat: event.beat,
+        message: `${event.layerId} overruns the phrase boundary by ${(event.endBeat - phraseBeats).toFixed(3)} beats.`,
+      });
+    }
+  }
 }
 
 function midpointPitch(register: RegisterRange): string {
@@ -360,6 +743,7 @@ function compileDraftNotes(
   harmony: ExpandedHarmonySpan[],
   sections: CompiledSection[],
   layerId: string,
+  timingState: TimingCompilationState,
 ): NoteEvent[] {
   const sortedDrafts = [...drafts].sort((left, right) => left.beat - right.beat);
   const notes: NoteEvent[] = [];
@@ -390,6 +774,7 @@ function compileDraftNotes(
       { ornament: draft.ornament === true },
     );
     previousPitch = resolved.pitch;
+    resolvePatternIntent(draft.timingIntent ?? draft.at?.intent, draft.beat, layerId, timingState);
     notes.push({
       beat: roundToGrid(draft.beat),
       length: roundToGrid(Math.max(0.05, draft.length)),
@@ -414,6 +799,7 @@ export function compileMotifToNotes(
   harmony: ExpandedHarmonySpan[],
   sections: CompiledSection[],
   layerId: string,
+  timingState: TimingCompilationState,
 ): NoteEvent[] {
   const motifLength = layer.motif.steps.reduce(
     (length, step) => Math.max(length, step.beat + step.length),
@@ -437,11 +823,12 @@ export function compileMotifToNotes(
         toneIntent: step.toneIntent,
         ornament: step.ornament,
         voiceId: step.voiceId,
+        timingIntent: step.timingIntent,
       });
     }
   }
 
-  return compileDraftNotes(drafts, layer, plan, harmony, sections, layerId);
+  return compileDraftNotes(drafts, layer, plan, harmony, sections, layerId, timingState);
 }
 
 export function compilePatternLayer(
@@ -450,8 +837,9 @@ export function compilePatternLayer(
   harmony: ExpandedHarmonySpan[],
   sections: CompiledSection[],
   layerId: string,
+  timingState: TimingCompilationState,
 ): NoteEvent[] {
-  return compileDraftNotes(layer.notes, layer, plan, harmony, sections, layerId);
+  return compileDraftNotes(layer.notes, layer, plan, harmony, sections, layerId, timingState);
 }
 
 export function mergeEventLayers(...layers: NoteEvent[][]): NoteEvent[] {
@@ -531,22 +919,24 @@ function getSectionMetadata(
 }
 
 export function compilePhrasePlan(plan: PhrasePlan): CompiledPhrase {
-  const sections = compileSections(plan);
-  const harmony = expandHarmonyPlan(plan);
-  const noteLayers = plan.noteLayers ?? [];
+  const timingState = createTimingState(plan);
+  const normalizedPlan = normalizePhrasePlan(plan, timingState);
+  const sections = compileSections(normalizedPlan);
+  const harmony = expandHarmonyPlan(normalizedPlan);
+  const noteLayers = normalizedPlan.noteLayers ?? [];
   const chords: ChordEvent[] =
-    plan.padLayers && plan.padLayers.length > 0
-      ? plan.padLayers.flatMap((layer) =>
-          (layer.overrideHarmony ?? plan.harmony).map((item, index, list) => {
+    normalizedPlan.padLayers && normalizedPlan.padLayers.length > 0
+      ? normalizedPlan.padLayers.flatMap((layer) =>
+          (layer.overrideHarmony ?? normalizedPlan.harmony).map((item, index, list) => {
             const nextBar = list[index + 1]?.bar;
             const lengthBars =
               item.lengthBars ?? (nextBar !== undefined ? nextBar - item.bar : 1);
-            const beat = item.bar * plan.beatsPerBar;
+            const beat = item.bar * normalizedPlan.beatsPerBar;
             const layerId = getResolvedLayerId(layer, index, "pad");
 
             return {
               beat,
-              length: lengthBars * plan.beatsPerBar,
+              length: lengthBars * normalizedPlan.beatsPerBar,
               root: item.root,
               quality: item.quality,
               synth: layer.synth,
@@ -559,17 +949,17 @@ export function compilePhrasePlan(plan: PhrasePlan): CompiledPhrase {
             };
           }),
         )
-      : plan.harmony
+      : normalizedPlan.harmony
           .filter((item) => item.synth)
           .map((item, index, list) => {
             const nextBar = list[index + 1]?.bar;
             const lengthBars =
               item.lengthBars ?? (nextBar !== undefined ? nextBar - item.bar : 1);
-            const beat = item.bar * plan.beatsPerBar;
+            const beat = item.bar * normalizedPlan.beatsPerBar;
 
             return {
               beat,
-              length: lengthBars * plan.beatsPerBar,
+              length: lengthBars * normalizedPlan.beatsPerBar,
               root: item.root,
               quality: item.quality,
               synth: item.synth!,
@@ -586,15 +976,23 @@ export function compilePhrasePlan(plan: PhrasePlan): CompiledPhrase {
     ...noteLayers.map((layer, index) => {
       const layerId = getResolvedLayerId(layer, index, layer.kind);
       return layer.kind === "motif"
-        ? compileMotifToNotes(layer, plan, harmony, sections, layerId)
-        : compilePatternLayer(layer, plan, harmony, sections, layerId);
+        ? compileMotifToNotes(layer, normalizedPlan, harmony, sections, layerId, timingState)
+        : compilePatternLayer(layer, normalizedPlan, harmony, sections, layerId, timingState);
     }),
   );
+  validateCompiledTimingBounds(notes, chords, normalizedPlan, timingState);
+  if (timingState.symbolicPlacementCount > 0) {
+    timingState.insights.push({
+      kind: "boundary",
+      message: `${timingState.symbolicPlacementCount} symbolic timing placements were normalized into absolute beat events.`,
+    });
+  }
 
   return {
     notes,
     chords: normalizeAndSortChords(chords),
     sections,
+    timing: buildTimingMetadata(timingState),
   };
 }
 

@@ -1,13 +1,25 @@
 import type { ChordEvent, SynthName } from "../composition";
 import { transpose } from "../theory";
+import {
+  addSpan,
+  scaleSpan,
+  spanToBeats,
+  type MeterSpec,
+  type Position,
+  type Span,
+} from "./timing";
 import type { HarmonyPlanItem, PatternNoteDraft } from "./types";
 
 type ChordPatternOptions = {
-  startBeat: number;
+  startBeat?: number;
+  start?: Position;
+  meter?: MeterSpec;
   beats: number;
   order: number[];
   stepLength?: number;
+  stepSpan?: Span;
   noteLength?: number;
+  noteSpan?: Span;
   velocity?: number;
   pan?: number;
   octaveOffset?: number;
@@ -16,29 +28,41 @@ type ChordPatternOptions = {
 };
 
 type SighingFigureOptions = {
-  startBeat: number;
+  startBeat?: number;
+  start?: Position;
+  meter?: MeterSpec;
   highDegree: number;
   lowDegree: number;
   stepLength?: number;
+  stepSpan?: Span;
   noteLength?: number;
+  noteSpan?: Span;
   velocity?: number;
   pan?: number;
 };
 
 type TurnFigureOptions = {
-  startBeat: number;
+  startBeat?: number;
+  start?: Position;
+  meter?: MeterSpec;
   centerDegree: number;
   stepLength?: number;
+  stepSpan?: Span;
   noteLength?: number;
+  noteSpan?: Span;
   velocity?: number;
   pan?: number;
 };
 
 type PentatonicFlourishOptions = {
-  startBeat: number;
+  startBeat?: number;
+  start?: Position;
+  meter?: MeterSpec;
   degrees: number[];
   stepLength?: number;
+  stepSpan?: Span;
   noteLength?: number;
+  noteSpan?: Span;
   velocity?: number;
   pan?: number;
   ornament?: boolean;
@@ -58,10 +82,12 @@ type BassPulseOptions = {
 
 type BellAccentOptions = {
   accents: Array<{
-    beat: number;
+    beat?: number;
+    at?: Position;
     pitch?: string;
     degree?: number;
     length?: number;
+    duration?: Span;
     velocity?: number;
     pan?: number;
     ornament?: boolean;
@@ -75,30 +101,86 @@ type PadChordOptions = {
   velocityScale?: number;
 };
 
+function getStartBeat(options: { startBeat?: number }): number {
+  return options.startBeat ?? 0;
+}
+
+function getStepBeats(stepLength: number | undefined, stepSpan: Span | undefined, meter?: MeterSpec): number {
+  if (stepSpan) {
+    if (!meter) {
+      throw new Error("A meter is required when stepSpan is used.");
+    }
+    return spanToBeats(stepSpan, meter);
+  }
+
+  return stepLength ?? 0.5;
+}
+
+function getStartPlacement(
+  start: Position | undefined,
+  startBeat: number | undefined,
+  meter: MeterSpec | undefined,
+  offsetBeats: number,
+  offsetSpan?: Span,
+): Pick<PatternNoteDraft, "beat" | "at"> {
+  if (start) {
+    if (!meter) {
+      throw new Error("A meter is required when a symbolic start position is used.");
+    }
+    return {
+      beat: 0,
+      at: addSpan(
+        start,
+        offsetSpan ?? { beats: offsetBeats },
+        meter,
+      ),
+    };
+  }
+
+  return {
+    beat: getStartBeat({ startBeat }) + offsetBeats,
+  };
+}
+
 export function arpeggiateChord({
-  startBeat,
+  startBeat = 0,
+  start,
+  meter,
   beats,
   order,
   stepLength = 0.5,
+  stepSpan,
   noteLength = stepLength * 0.9,
+  noteSpan,
   velocity = 0.5,
   pan = 0,
   octaveOffset = 0,
   toneIntent = "chord",
   ornament = false,
 }: ChordPatternOptions): PatternNoteDraft[] {
+  const resolvedStepLength = getStepBeats(stepLength, stepSpan, meter);
   return order
-    .filter((_, index) => index * stepLength < beats)
-    .map((chordDegree, index) => ({
-      beat: startBeat + index * stepLength,
-      length: noteLength,
-      chordDegree,
-      velocity,
-      pan,
-      octaveOffset,
-      toneIntent,
-      ornament,
-    }));
+    .filter((_, index) => index * resolvedStepLength < beats)
+    .map((chordDegree, index) => {
+      const note = {
+        ...getStartPlacement(
+          start,
+          startBeat,
+          meter,
+          index * resolvedStepLength,
+          stepSpan ? scaleSpan(stepSpan, index) : undefined,
+        ),
+        length: noteLength,
+        chordDegree,
+        velocity,
+        pan,
+        octaveOffset,
+        toneIntent,
+        ornament,
+      } satisfies PatternNoteDraft;
+
+      return noteSpan ? { ...note, duration: noteSpan, length: 0 } : note;
+    });
 }
 
 export function brokenTriad(
@@ -111,62 +193,106 @@ export function brokenTriad(
 }
 
 export function sighingFigure({
-  startBeat,
+  startBeat = 0,
+  start,
+  meter,
   highDegree,
   lowDegree,
   stepLength = 0.5,
+  stepSpan,
   noteLength = stepLength * 0.9,
+  noteSpan,
   velocity = 0.5,
   pan = 0,
 }: SighingFigureOptions): PatternNoteDraft[] {
+  const first = {
+    ...getStartPlacement(start, startBeat, meter, 0),
+    length: noteLength,
+    degree: highDegree,
+    velocity,
+    pan,
+    toneIntent: "scale",
+  } satisfies PatternNoteDraft;
+  const second = {
+    ...getStartPlacement(
+      start,
+      startBeat,
+      meter,
+      stepLength,
+      stepSpan,
+    ),
+    length: noteLength,
+    degree: lowDegree,
+    velocity: velocity * 0.92,
+    pan,
+    toneIntent: "scale",
+  } satisfies PatternNoteDraft;
+
   return [
-    {
-      beat: startBeat,
-      length: noteLength,
-      degree: highDegree,
-      velocity,
-      pan,
-      toneIntent: "scale",
-    },
-    {
-      beat: startBeat + stepLength,
-      length: noteLength,
-      degree: lowDegree,
-      velocity: velocity * 0.92,
-      pan,
-      toneIntent: "scale",
-    },
+    noteSpan ? { ...first, duration: noteSpan, length: 0 } : first,
+    noteSpan ? { ...second, duration: noteSpan, length: 0 } : second,
   ];
 }
 
 export function turnFigure({
-  startBeat,
+  startBeat = 0,
+  start,
+  meter,
   centerDegree,
   stepLength = 0.25,
+  stepSpan,
   noteLength = stepLength * 0.9,
+  noteSpan,
   velocity = 0.44,
   pan = 0,
 }: TurnFigureOptions): PatternNoteDraft[] {
-  return [
-    { beat: startBeat, length: noteLength, degree: centerDegree + 1, velocity, pan, toneIntent: "scale", ornament: true },
-    { beat: startBeat + stepLength, length: noteLength, degree: centerDegree, velocity: velocity * 0.96, pan, toneIntent: "scale", ornament: true },
-    { beat: startBeat + stepLength * 2, length: noteLength, degree: centerDegree - 1, velocity: velocity * 0.92, pan, toneIntent: "scale", ornament: true },
-    { beat: startBeat + stepLength * 3, length: noteLength, degree: centerDegree, velocity: velocity * 0.9, pan, toneIntent: "scale", ornament: true },
+  const steps: Array<Pick<PatternNoteDraft, "degree" | "velocity" | "pan" | "toneIntent" | "ornament">> = [
+    { degree: centerDegree + 1, velocity, pan, toneIntent: "scale", ornament: true },
+    { degree: centerDegree, velocity: velocity * 0.96, pan, toneIntent: "scale", ornament: true },
+    { degree: centerDegree - 1, velocity: velocity * 0.92, pan, toneIntent: "scale", ornament: true },
+    { degree: centerDegree, velocity: velocity * 0.9, pan, toneIntent: "scale", ornament: true },
   ];
+
+  return steps.map((step, index) => {
+    const note = {
+      ...getStartPlacement(
+        start,
+        startBeat,
+        meter,
+        stepLength * index,
+        stepSpan ? scaleSpan(stepSpan, index) : undefined,
+      ),
+      length: noteLength,
+      ...step,
+    } satisfies PatternNoteDraft;
+
+    return noteSpan ? { ...note, duration: noteSpan, length: 0 } : note;
+  });
 }
 
 export function pentatonicFlourish({
-  startBeat,
+  startBeat = 0,
+  start,
+  meter,
   degrees,
   stepLength = 0.5,
+  stepSpan,
   noteLength = stepLength * 0.9,
+  noteSpan,
   velocity = 0.54,
   pan = 0,
   ornament = false,
 }: PentatonicFlourishOptions): PatternNoteDraft[] {
   return degrees.map((degree, index) => ({
-    beat: startBeat + index * stepLength,
-    length: noteLength,
+    ...getStartPlacement(
+      start,
+      startBeat,
+      meter,
+      index * stepLength,
+      stepSpan ? scaleSpan(stepSpan, index) : undefined,
+    ),
+    length: noteSpan ? 0 : noteLength,
+    duration: noteSpan,
     degree,
     velocity: velocity - index * 0.01,
     pan,
@@ -211,8 +337,10 @@ export function sparseBellAccents({
   accents,
 }: BellAccentOptions): PatternNoteDraft[] {
   return accents.map((accent) => ({
-    beat: accent.beat,
-    length: accent.length ?? 0.9,
+    beat: accent.at ? 0 : accent.beat ?? 0,
+    at: accent.at,
+    length: accent.duration ? 0 : accent.length ?? 0.9,
+    duration: accent.duration,
     pitch: accent.pitch,
     degree: accent.degree,
     velocity: accent.velocity ?? 0.14,

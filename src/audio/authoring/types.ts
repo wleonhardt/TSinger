@@ -5,9 +5,25 @@ import type {
   SynthName,
 } from "../composition";
 import type { CompiledSection, SectionPlanItem, VoiceId } from "../metadata";
+import type {
+  MeterSpec,
+  Position,
+  Span,
+  SwingProfile,
+  TimingIntent,
+  TimingMetadata,
+} from "./timing";
 
 export type ToneIntent = "chord" | "scale" | "color" | "passing";
 export type { SectionPlanItem, VoiceId };
+export type {
+  MeterSpec,
+  Position,
+  Span,
+  SwingProfile,
+  TimingIntent,
+  TimingMetadata,
+};
 
 export type RegisterRange = {
   min: string;
@@ -38,6 +54,7 @@ export type MotifStep = {
   toneIntent?: ToneIntent;
   ornament?: boolean;
   voiceId?: VoiceId;
+  timingIntent?: TimingIntent;
 };
 
 export type Motif = {
@@ -48,6 +65,8 @@ export type Motif = {
 export type PatternNoteDraft = {
   beat: number;
   length: number;
+  at?: Position;
+  duration?: Span;
   pitch?: string;
   degree?: number;
   chordDegree?: number;
@@ -59,6 +78,7 @@ export type PatternNoteDraft = {
   ornament?: boolean;
   glideToDegree?: number;
   voiceId?: VoiceId;
+  timingIntent?: TimingIntent;
 };
 
 type LayerPlanBase = {
@@ -76,8 +96,10 @@ export type MotifLayerPlan = LayerPlanBase & {
   kind: "motif";
   motif: Motif;
   repeatEveryBeats?: number;
+  repeatEvery?: Span;
   repetitions?: number;
   beatOffset?: number;
+  positionOffset?: Position;
 };
 
 export type DraftLayerPlan = LayerPlanBase & {
@@ -89,6 +111,7 @@ export type PhraseLayerPlan = MotifLayerPlan | DraftLayerPlan;
 
 export type ArrangementCurvePoint = {
   beat: number;
+  at?: Position;
   value: number;
 };
 
@@ -111,6 +134,8 @@ export type PadLayerPlan = {
 export type PhrasePlan = {
   bars: number;
   beatsPerBar: number;
+  meter?: MeterSpec;
+  swing?: SwingProfile;
   key: {
     root: string;
     scale: string;
@@ -126,6 +151,7 @@ export type CompiledPhrase = {
   notes: NoteEvent[];
   chords: ChordEvent[];
   sections: CompiledSection[];
+  timing?: TimingMetadata;
 };
 
 export type ValidationIssue = {

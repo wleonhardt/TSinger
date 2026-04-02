@@ -1,4 +1,5 @@
 import type { CompiledSection, SectionRole, VoiceId } from "./metadata";
+import type { TimingMetadata } from "./authoring/timing";
 
 export type SynthName =
   | "softLead"
@@ -65,4 +66,5 @@ export type Composition = {
   phrase: Phrase;
   loop: boolean;
   sections?: CompiledSection[];
+  timing?: TimingMetadata;
 };

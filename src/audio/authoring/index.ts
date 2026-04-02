@@ -4,5 +4,6 @@ export * from "./harmony";
 export * from "./motifs";
 export * from "./offline";
 export * from "./patterns";
+export * from "./timing";
 export * from "./types";
 export * from "./voiceLeading";

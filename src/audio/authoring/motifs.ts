@@ -1,3 +1,4 @@
+import { spanToBeats, type MeterSpec, type Span } from "./timing";
 import type { Motif, MotifStep } from "./types";
 
 type SequenceShift = number | { scaleSteps?: number; semitones?: number };
@@ -107,6 +108,14 @@ export function displaceRhythm(motif: Motif, beatOffset: number): Motif {
       beat: step.beat + beatOffset,
     })),
   };
+}
+
+export function displaceRhythmBySpan(
+  motif: Motif,
+  displacement: Span,
+  meter: MeterSpec,
+): Motif {
+  return displaceRhythm(motif, spanToBeats(displacement, meter));
 }
 
 export function makeAnswerPhrase(

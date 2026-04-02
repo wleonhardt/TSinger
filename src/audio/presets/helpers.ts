@@ -1,3 +1,9 @@
+import {
+  addSpan,
+  spanToBeats,
+  type MeterSpec,
+  type Span,
+} from "../authoring/timing";
 import type { Motif, MotifStep, PatternNoteDraft, VoiceId } from "../authoring/types";
 
 function clamp(value: number, min: number, max: number): number {
@@ -28,6 +34,8 @@ export function placeDraftNotes(
   notes: PatternNoteDraft[],
   options: {
     beatOffset?: number;
+    spanOffset?: Span;
+    meter?: MeterSpec;
     velocityScale?: number;
     panShift?: number;
     lengthScale?: number;
@@ -35,14 +43,19 @@ export function placeDraftNotes(
 ): PatternNoteDraft[] {
   const {
     beatOffset = 0,
+    spanOffset,
+    meter,
     velocityScale = 1,
     panShift = 0,
     lengthScale = 1,
   } = options;
+  const symbolicBeatOffset =
+    spanOffset && meter ? spanToBeats(spanOffset, meter) : 0;
 
   return notes.map((note) => ({
     ...note,
-    beat: note.beat + beatOffset,
+    beat: note.beat + beatOffset + symbolicBeatOffset,
+    at: note.at && spanOffset && meter ? addSpan(note.at, spanOffset, meter) : note.at,
     length: note.length * lengthScale,
     velocity:
       note.velocity !== undefined

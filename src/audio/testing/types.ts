@@ -1,5 +1,6 @@
 import type { ChordQuality, Composition, SynthName } from "../composition";
 import type { SectionRole, VoiceId } from "../metadata";
+import type { TimingMetadata } from "../authoring/timing";
 
 export type WindowedSeries = number[];
 
@@ -112,6 +113,7 @@ export type SymbolicAnalysis = {
   registerCenterMidi: number | null;
   cadenceStrengthByBar: number[];
   duplicateEventWarnings: string[];
+  timing: TimingMetadata;
 };
 
 export type AudioFeatureAnalysis = {

@@ -39,6 +39,9 @@ export function validatePresetAnalysis(analysis: PresetAnalysis): ValidationWarn
       Math.max(0, analysis.symbolic.cadenceStrengthByBar.length - 1),
     ),
   );
+  const timingWarnings = analysis.symbolic.timing.issues.filter(
+    (issue) => issue.level === "warning" || issue.level === "error",
+  );
 
   pushIf(warnings, maxDensity > 2.6, {
     code: "dense-bar",
@@ -123,6 +126,14 @@ export function validatePresetAnalysis(analysis: PresetAnalysis): ValidationWarn
       message: "There are several simultaneous collision points, which may translate into exposed roughness.",
     },
   );
+
+  if (timingWarnings.length > 0) {
+    warnings.push({
+      code: "timing-alignment",
+      severity: timingWarnings.some((issue) => issue.level === "error") ? "error" : "warning",
+      message: timingWarnings[0]!.message,
+    });
+  }
 
   return warnings;
 }

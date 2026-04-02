@@ -5,6 +5,14 @@ import {
   retrograde,
 } from "../authoring/motifs";
 import { arpeggiateChord, sparseBellAccents } from "../authoring/patterns";
+import {
+  cadenceBeat,
+  pickupBefore,
+  positionAtBarBeat,
+  repeatAcrossBars,
+  span,
+  withPosition,
+} from "../authoring/timing";
 import type {
   HarmonyPlanItem,
   Motif,
@@ -14,7 +22,6 @@ import type {
 import type { Composition } from "../composition";
 import {
   mapMotifSteps,
-  placeDraftNotes,
   scaleMotifVelocities,
   withVoiceId,
 } from "./helpers";
@@ -23,6 +30,10 @@ const GLASS_BPM = 72;
 const GLASS_BEATS_PER_BAR = 3;
 const GLASS_MASTER_BARS = 16;
 const GLASS_PART_BARS = 4;
+const GLASS_METER = {
+  beatsPerBar: GLASS_BEATS_PER_BAR,
+  beatUnit: 4,
+} as const;
 
 function glassPartStart(index: number): number {
   return index * GLASS_PART_BARS * GLASS_BEATS_PER_BAR;
@@ -51,6 +62,7 @@ function buildComposition(params: {
       notes: phrase.notes,
       chords: phrase.chords,
     },
+    timing: phrase.timing,
   };
 }
 
@@ -581,7 +593,7 @@ const glassMasterCrown: Motif = {
     { beat: 0, length: 0.56, offset: 2, velocity: 0.62, pan: 0.06, toneIntent: "chord" },
     { beat: 0.85, length: 0.34, offset: 1, velocity: 0.5, pan: 0.04, toneIntent: "passing" },
     { beat: 1.5, length: 0.42, offset: 0, velocity: 0.58, pan: 0.04, toneIntent: "chord" },
-    { beat: 2, length: 1.42, offset: 0, velocity: 0.68, pan: 0.02, toneIntent: "chord" },
+    { beat: 2, length: 1, offset: 0, velocity: 0.68, pan: 0.02, toneIntent: "chord" },
   ],
 };
 
@@ -695,11 +707,54 @@ function buildGlassMasterBass(harmony: HarmonyPlanItem[]): PatternNoteDraft[] {
 }
 
 function buildGlassMasterCounterpoint(): PatternNoteDraft[] {
+  const counterCell = [
+    withPosition(
+      {
+        pitch: "A4",
+        velocity: 0.16,
+        pan: -0.06,
+        toneIntent: "chord" as const,
+      },
+      {
+        at: positionAtBarBeat(1, 1, 1, 2),
+        duration: span(0, 1),
+      },
+    ),
+    withPosition(
+      {
+        pitch: "G4",
+        velocity: 0.15,
+        pan: 0.06,
+        toneIntent: "scale" as const,
+      },
+      {
+        at: positionAtBarBeat(2, 2, 1, 4),
+        duration: span(0, 0, 3, 4),
+      },
+    ),
+  ];
+
   return [
-    { beat: glassPartStart(1) + 0.5, length: 1.05, pitch: "A4", velocity: 0.16, pan: -0.06, toneIntent: "chord" },
-    { beat: glassPartStart(1) + 4.25, length: 0.92, pitch: "G4", velocity: 0.15, pan: 0.06, toneIntent: "scale" },
+    ...repeatAcrossBars(counterCell, {
+      startBar: 5,
+      repetitions: 2,
+      everyBars: 8,
+      meter: GLASS_METER,
+      label: "Counterline figure repeats across the bloom and return.",
+    }),
     { beat: glassPartStart(1) + 7, length: 1.08, pitch: "B4", velocity: 0.16, pan: -0.04, toneIntent: "color" },
-    { beat: glassPartStart(3), length: 1.05, pitch: "F4", velocity: 0.14, pan: -0.08, toneIntent: "chord" },
+    withPosition(
+      {
+        pitch: "F4",
+        velocity: 0.14,
+        pan: -0.08,
+        toneIntent: "chord" as const,
+      },
+      {
+        at: positionAtBarBeat(13, 1),
+        duration: span(0, 1),
+      },
+    ),
   ];
 }
 
@@ -714,11 +769,29 @@ function buildGlassMasterPlan(): PhrasePlan {
   const harmony = buildGlassMasterHarmony();
   const bells = sparseBellAccents({
     accents: [
-      { beat: 0, pitch: "E6", length: 0.72, velocity: 0.11, pan: 0.12 },
-      { beat: glassPartStart(1) + 1.5, pitch: "C6", length: 0.74, velocity: 0.09, pan: -0.08 },
+      { at: positionAtBarBeat(1, 1), pitch: "E6", duration: span(0, 0, 3, 4), velocity: 0.11, pan: 0.12 },
+      { at: positionAtBarBeat(5, 2, 1, 2), pitch: "C6", duration: span(0, 0, 3, 4), velocity: 0.09, pan: -0.08 },
       { beat: glassPartStart(2) + 10.5, pitch: "G5", length: 0.66, velocity: 0.07, pan: 0.06 },
-      { beat: glassPartStart(3) + 3, pitch: "E6", length: 0.76, velocity: 0.1, pan: 0.1 },
-      { beat: glassPartStart(3) + 10.75, pitch: "A6", length: 1.08, velocity: 0.13, pan: 0.14 },
+      {
+        at: pickupBefore(
+          { kind: "sectionStart", startBar: 13, bars: 3, sectionId: "glass-return", label: "the return" },
+          GLASS_METER,
+        ),
+        pitch: "E6",
+        duration: span(0, 0, 3, 4),
+        velocity: 0.1,
+        pan: 0.1,
+      },
+      {
+        at: cadenceBeat(
+          { kind: "phraseEnd", bars: GLASS_MASTER_BARS, label: "the final cadence" },
+          GLASS_METER,
+        ),
+        pitch: "A6",
+        duration: span(0, 1),
+        velocity: 0.13,
+        pan: 0.14,
+      },
     ],
   });
   const leadLayers = withVoiceId("lead", [
@@ -727,7 +800,7 @@ function buildGlassMasterPlan(): PhrasePlan {
       id: "glass-i-call",
       synth: "softLead" as const,
       motif: glassMasterStatement,
-      beatOffset: glassPartStart(0),
+      positionOffset: positionAtBarBeat(1, 1),
       register: { min: "E5", max: "C6", anchor: "A5" },
       clampToHarmony: true,
     },
@@ -736,7 +809,7 @@ function buildGlassMasterPlan(): PhrasePlan {
       id: "glass-i-answer",
       synth: "softLead" as const,
       motif: glassMasterAnswer,
-      beatOffset: glassPartStart(0) + 3,
+      positionOffset: positionAtBarBeat(2, 1),
       register: { min: "F5", max: "D6", anchor: "A5" },
       clampToHarmony: true,
     },
@@ -745,7 +818,7 @@ function buildGlassMasterPlan(): PhrasePlan {
       id: "glass-i-vigil",
       synth: "softLead" as const,
       motif: glassDominantFigure,
-      beatOffset: glassPartStart(0) + 6,
+      positionOffset: positionAtBarBeat(3, 1),
       register: { min: "E5", max: "B5", anchor: "G#5" },
       clampToHarmony: false,
     },
@@ -754,7 +827,7 @@ function buildGlassMasterPlan(): PhrasePlan {
       id: "glass-i-close",
       synth: "softLead" as const,
       motif: glassMasterBloomCadence,
-      beatOffset: glassPartStart(0) + 9,
+      positionOffset: positionAtBarBeat(4, 1),
       register: { min: "E5", max: "C6", anchor: "A5" },
       clampToHarmony: true,
     },
@@ -854,6 +927,7 @@ function buildGlassMasterPlan(): PhrasePlan {
   return {
     bars: GLASS_MASTER_BARS,
     beatsPerBar: GLASS_BEATS_PER_BAR,
+    meter: GLASS_METER,
     key: { root: "A", scale: "minor" },
     harmony,
     sections: [
@@ -926,10 +1000,10 @@ function buildGlassMasterPlan(): PhrasePlan {
     padLayers: [{ synth: "warmPad", voiceId: "pad", velocityScale: 0.82 }],
     arrangement: {
       densityCurve: [
-        { beat: 0, value: 0.52 },
-        { beat: glassPartStart(1), value: 0.62 },
-        { beat: glassPartStart(2), value: 0.18 },
-        { beat: glassPartStart(3), value: 0.7 },
+        { at: positionAtBarBeat(1, 1), beat: 0, value: 0.52 },
+        { at: positionAtBarBeat(5, 1), beat: glassPartStart(1), value: 0.62 },
+        { at: positionAtBarBeat(9, 1), beat: glassPartStart(2), value: 0.18 },
+        { at: positionAtBarBeat(13, 1), beat: glassPartStart(3), value: 0.7 },
         { beat: GLASS_MASTER_BARS * GLASS_BEATS_PER_BAR, value: 0.54 },
       ],
       registerCurve: [
@@ -951,7 +1025,14 @@ function buildGlassMasterPlan(): PhrasePlan {
         { beat: glassPartStart(1) + 8.5, value: 0.82 },
         { beat: glassPartStart(2) + 8.5, value: 0.4 },
         { beat: glassPartStart(3) + 5.5, value: 0.88 },
-        { beat: glassPartStart(3) + 8.5, value: 1.1 },
+        {
+          at: cadenceBeat(
+            { kind: "phraseEnd", bars: GLASS_MASTER_BARS, label: "the final cadence" },
+            GLASS_METER,
+          ),
+          beat: glassPartStart(3) + 8.5,
+          value: 1.1,
+        },
       ],
       ornamentBaseProbability: 0.12,
     },

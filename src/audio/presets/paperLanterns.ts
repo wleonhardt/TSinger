@@ -6,6 +6,14 @@ import {
   sparseBellAccents,
   turnFigure,
 } from "../authoring/patterns";
+import {
+  cadenceBeat,
+  pickupBefore,
+  positionAtBarBeat,
+  repeatAcrossBars,
+  span,
+  withPosition,
+} from "../authoring/timing";
 import type {
   HarmonyPlanItem,
   Motif,
@@ -24,6 +32,10 @@ const LANTERN_BPM = 88;
 const LANTERN_BEATS_PER_BAR = 4;
 const LANTERN_MASTER_BARS = 16;
 const LANTERN_PART_BARS = 4;
+const LANTERN_METER = {
+  beatsPerBar: LANTERN_BEATS_PER_BAR,
+  beatUnit: 4,
+} as const;
 
 function lanternPartStart(index: number): number {
   return index * LANTERN_PART_BARS * LANTERN_BEATS_PER_BAR;
@@ -52,6 +64,7 @@ function buildComposition(params: {
       notes: phrase.notes,
       chords: phrase.chords,
     },
+    timing: phrase.timing,
   };
 }
 
@@ -191,7 +204,7 @@ const lanternReturnLift = scaleMotifVelocities(
 const lanternHomecoming = scaleMotifVelocities(
   mapMotifSteps(lanternFinalCadence, (step, index) => ({
     ...step,
-    length: index === 4 ? 1.46 : step.length,
+    length: index === 4 ? 0.75 : step.length,
     velocity:
       step.velocity !== undefined
         ? step.velocity * (index === 4 ? 1.08 : 1.02)
@@ -458,53 +471,78 @@ function buildLanternMasterBass(harmony: HarmonyPlanItem[]): PatternNoteDraft[] 
 
 function buildLanternMasterOrnaments(): PatternNoteDraft[] {
   return [
-    ...placeDraftNotes(
-      turnFigure({
-        startBeat: 0,
-        centerDegree: 2,
-        stepLength: 0.25,
-        noteLength: 0.16,
-        velocity: 0.12,
-        pan: 0.18,
-      }),
-      { beatOffset: lanternPartStart(1) - 3.25, velocityScale: 0.96 },
-    ),
-    ...placeDraftNotes(
-      sighingFigure({
-        startBeat: 0,
-        highDegree: 5,
-        lowDegree: 4,
-        stepLength: 0.5,
-        noteLength: 0.18,
-        velocity: 0.12,
-        pan: -0.16,
-      }).map((note) => ({
-        ...note,
-        ornament: true,
-      })),
-      { beatOffset: lanternPartStart(2) + 10.75, velocityScale: 0.92 },
-    ),
+    ...turnFigure({
+      start: pickupBefore(
+        { kind: "sectionStart", startBar: 5, bars: 4, sectionId: "lantern-bloom", label: "the bloom" },
+        LANTERN_METER,
+        { subdivisions: 1, subdivisionUnit: 4 },
+      ),
+      meter: LANTERN_METER,
+      centerDegree: 2,
+      stepSpan: { subdivisions: 1, subdivisionUnit: 4 },
+      noteSpan: { subdivisions: 1, subdivisionUnit: 4 },
+      velocity: 0.12,
+      pan: 0.18,
+    }).map((note) => ({
+      ...note,
+      velocity: note.velocity !== undefined ? note.velocity * 0.96 : note.velocity,
+    })),
+    ...sighingFigure({
+      start: pickupBefore(
+        { kind: "sectionStart", startBar: 13, bars: 3, sectionId: "lantern-homecoming", label: "the homecoming" },
+        LANTERN_METER,
+      ),
+      meter: LANTERN_METER,
+      highDegree: 5,
+      lowDegree: 4,
+      stepSpan: { subdivisions: 1, subdivisionUnit: 2 },
+      noteSpan: { subdivisions: 1, subdivisionUnit: 3 },
+      velocity: 0.12,
+      pan: -0.16,
+    }).map((note) => ({
+      ...note,
+      ornament: true,
+      velocity: note.velocity !== undefined ? note.velocity * 0.92 : note.velocity,
+    })),
   ];
 }
 
 function buildLanternCounterline(): PatternNoteDraft[] {
+  const counterCell = [
+    withPosition(
+      {
+        pitch: "E4",
+        velocity: 0.16,
+        pan: -0.08,
+        toneIntent: "chord" as const,
+      },
+      {
+        at: positionAtBarBeat(1, 2, 2, 4),
+        duration: span(0, 1),
+      },
+    ),
+    withPosition(
+      {
+        pitch: "G4",
+        velocity: 0.15,
+        pan: 0.04,
+        toneIntent: "scale" as const,
+      },
+      {
+        at: positionAtBarBeat(2, 2, 2, 4),
+        duration: span(0, 0, 3, 4),
+      },
+    ),
+  ];
+
   return [
-    {
-      beat: lanternPartStart(1) + 1.5,
-      length: 0.92,
-      pitch: "E4",
-      velocity: 0.16,
-      pan: -0.08,
-      toneIntent: "chord",
-    },
-    {
-      beat: lanternPartStart(1) + 5.5,
-      length: 0.84,
-      pitch: "G4",
-      velocity: 0.15,
-      pan: 0.04,
-      toneIntent: "scale",
-    },
+    ...repeatAcrossBars(counterCell, {
+      startBar: 5,
+      repetitions: 2,
+      everyBars: 8,
+      meter: LANTERN_METER,
+      label: "Counterline cell returns in bloom and homecoming.",
+    }),
     {
       beat: lanternPartStart(1) + 9.5,
       length: 0.94,
@@ -522,27 +560,19 @@ function buildLanternCounterline(): PatternNoteDraft[] {
       toneIntent: "chord",
     },
     {
-      beat: lanternPartStart(3),
-      length: 1.04,
-      pitch: "F4",
-      velocity: 0.15,
-      pan: -0.06,
-      toneIntent: "chord",
-    },
-    {
-      beat: lanternPartStart(3) + 5.75,
-      length: 0.98,
-      pitch: "E4",
-      velocity: 0.17,
-      pan: -0.06,
-      toneIntent: "chord",
-    },
-    {
       beat: lanternPartStart(3) + 9.75,
       length: 1.02,
       pitch: "A4",
       velocity: 0.18,
       pan: -0.02,
+      toneIntent: "chord",
+    },
+    {
+      beat: lanternPartStart(3) + 14.5,
+      length: 1.04,
+      pitch: "F4",
+      velocity: 0.15,
+      pan: -0.06,
       toneIntent: "chord",
     },
   ];
@@ -552,11 +582,29 @@ function buildLanternMasterPlan(): PhrasePlan {
   const harmony = buildLanternMasterHarmony();
   const bells = sparseBellAccents({
     accents: [
-      { beat: 0, pitch: "G5", length: 0.62, velocity: 0.08, pan: 0.14 },
-      { beat: lanternPartStart(1) + 1, pitch: "A5", length: 0.58, velocity: 0.07, pan: -0.1 },
+      { at: positionAtBarBeat(1, 1), pitch: "G5", duration: span(0, 0, 5, 8), velocity: 0.08, pan: 0.14 },
+      {
+        at: pickupBefore(
+          { kind: "sectionStart", startBar: 5, bars: 4, sectionId: "lantern-bloom", label: "the bloom" },
+          LANTERN_METER,
+        ),
+        pitch: "A5",
+        duration: span(0, 0, 5, 8),
+        velocity: 0.07,
+        pan: -0.1,
+      },
       { beat: lanternPartStart(2) + 8.25, pitch: "A5", length: 0.56, velocity: 0.06, pan: 0.1 },
-      { beat: lanternPartStart(3) + 4, pitch: "G5", length: 0.62, velocity: 0.09, pan: 0.12 },
-      { beat: lanternPartStart(3) + 15.75, pitch: "C6", length: 0.82, velocity: 0.1, pan: 0.14 },
+      { at: positionAtBarBeat(14, 1), pitch: "G5", duration: span(0, 0, 5, 8), velocity: 0.09, pan: 0.12 },
+      {
+        at: cadenceBeat(
+          { kind: "phraseEnd", bars: LANTERN_MASTER_BARS, label: "the final landing" },
+          LANTERN_METER,
+        ),
+        pitch: "C6",
+        duration: span(0, 0, 3, 4),
+        velocity: 0.1,
+        pan: 0.14,
+      },
     ],
   });
   const leadLayers = withVoiceId("lead", [
@@ -565,7 +613,7 @@ function buildLanternMasterPlan(): PhrasePlan {
       id: "lantern-i-call",
       synth: "softLead" as const,
       motif: lanternCall,
-      beatOffset: lanternPartStart(0),
+      positionOffset: positionAtBarBeat(1, 1),
       register: { min: "E5", max: "D6", anchor: "G5" },
       clampToHarmony: true,
     },
@@ -574,7 +622,7 @@ function buildLanternMasterPlan(): PhrasePlan {
       id: "lantern-i-response",
       synth: "softLead" as const,
       motif: lanternResponse,
-      beatOffset: lanternPartStart(0) + 4,
+      positionOffset: positionAtBarBeat(2, 1),
       register: { min: "D5", max: "C6", anchor: "E5" },
       clampToHarmony: true,
     },
@@ -583,7 +631,7 @@ function buildLanternMasterPlan(): PhrasePlan {
       id: "lantern-i-lift",
       synth: "softLead" as const,
       motif: lanternLift,
-      beatOffset: lanternPartStart(0) + 8,
+      positionOffset: positionAtBarBeat(3, 1),
       register: { min: "G5", max: "D6", anchor: "A5" },
       clampToHarmony: true,
     },
@@ -592,7 +640,7 @@ function buildLanternMasterPlan(): PhrasePlan {
       id: "lantern-i-cadence",
       synth: "softLead" as const,
       motif: lanternHalfCadence,
-      beatOffset: lanternPartStart(0) + 12,
+      positionOffset: positionAtBarBeat(4, 1),
       register: { min: "G5", max: "D6", anchor: "D6" },
       clampToHarmony: true,
     },
@@ -686,6 +734,7 @@ function buildLanternMasterPlan(): PhrasePlan {
   return {
     bars: LANTERN_MASTER_BARS,
     beatsPerBar: LANTERN_BEATS_PER_BAR,
+    meter: LANTERN_METER,
     key: { root: "C", scale: "majorPentatonic" },
     harmony,
     sections: [
@@ -758,10 +807,10 @@ function buildLanternMasterPlan(): PhrasePlan {
     padLayers: [{ synth: "warmPad", voiceId: "pad", velocityScale: 0.86 }],
     arrangement: {
       densityCurve: [
-        { beat: 0, value: 0.56 },
-        { beat: lanternPartStart(1), value: 0.68 },
-        { beat: lanternPartStart(2), value: 0.24 },
-        { beat: lanternPartStart(3), value: 0.68 },
+        { at: positionAtBarBeat(1, 1), beat: 0, value: 0.56 },
+        { at: positionAtBarBeat(5, 1), beat: lanternPartStart(1), value: 0.68 },
+        { at: positionAtBarBeat(9, 1), beat: lanternPartStart(2), value: 0.24 },
+        { at: positionAtBarBeat(13, 1), beat: lanternPartStart(3), value: 0.68 },
         { beat: LANTERN_MASTER_BARS * LANTERN_BEATS_PER_BAR, value: 0.58 },
       ],
       registerCurve: [
@@ -783,7 +832,14 @@ function buildLanternMasterPlan(): PhrasePlan {
         { beat: lanternPartStart(1) + 15.25, value: 0.88 },
         { beat: lanternPartStart(2) + 15.25, value: 0.46 },
         { beat: lanternPartStart(3) + 7.5, value: 0.84 },
-        { beat: lanternPartStart(3) + 15.25, value: 1.12 },
+        {
+          at: cadenceBeat(
+            { kind: "phraseEnd", bars: LANTERN_MASTER_BARS, label: "the final landing" },
+            LANTERN_METER,
+          ),
+          beat: lanternPartStart(3) + 15.25,
+          value: 1.12,
+        },
       ],
       ornamentBaseProbability: 0.12,
     },
