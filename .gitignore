@@ -6,3 +6,4 @@ cdk/dist/
 cdk/cdk.out/
 .claude/
 .codex/
+analysis-output/
