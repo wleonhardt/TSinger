@@ -4,6 +4,7 @@ import {
   type MeterSpec,
   type Span,
 } from "../authoring/timing";
+import type { Phrase } from "../composition";
 import type {
   Motif,
   MotifStep,
@@ -99,4 +100,32 @@ export function withRhythmRole<T>(
 
 export function withRealization<T>(items: T[]): Array<T & { realization: true }> {
   return items.map((item) => ({ ...item, realization: true as const }));
+}
+
+export function scalePhraseDynamics(
+  phrase: Phrase,
+  options: {
+    noteScale?: number;
+    chordScale?: number;
+  } = {},
+): Phrase {
+  const { noteScale = 1, chordScale = 1 } = options;
+
+  return {
+    bars: phrase.bars,
+    notes: phrase.notes.map((note) => ({
+      ...note,
+      velocity:
+        note.velocity !== undefined
+          ? clamp(note.velocity * noteScale, 0.04, 1)
+          : note.velocity,
+    })),
+    chords: phrase.chords.map((chord) => ({
+      ...chord,
+      velocity:
+        chord.velocity !== undefined
+          ? clamp(chord.velocity * chordScale, 0.04, 1)
+          : chord.velocity,
+    })),
+  };
 }

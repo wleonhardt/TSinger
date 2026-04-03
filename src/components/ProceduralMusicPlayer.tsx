@@ -17,21 +17,21 @@ type TransportUiMeta = {
 };
 
 const presetUiMeta: Record<string, PresetUiMeta> = {
-  "glass-garden": {
-    description: "Luminous tones drift over soft pads and rounded low notes.",
-    mood: "Luminous, soft, floating",
+  "heliograph-procession": {
+    description: "A ceremonial ascent of mirrored light, vaulted harmonies, and disciplined return.",
+    mood: "Radiant, architectural, processional",
   },
-  "quiet-arcade": {
-    description: "Tiny neon gestures, restrained sparkle, and a playful pulse.",
-    mood: "Playful, tiny neon, restrained",
+  "undertow-atlas": {
+    description: "A five-beat horizon song where tidal pull and dark weather keep changing the same map.",
+    mood: "Nocturnal, tidal, searching",
   },
-  "low-tide-memory": {
-    description: "Long breaths, distant bells, and a slow reflective horizon.",
-    mood: "Spacious, slow, reflective",
+  "cinder-carousel": {
+    description: "A haunted ember-waltz: intimate machinery, scorched memory, and a tender final turn.",
+    mood: "Fragile, haunted, intimate",
   },
-  "paper-lanterns": {
-    description: "Warm melodic phrases with a light, lantern-like shimmer.",
-    mood: "Warm, melodic, weightless",
+  "pinwheel-circuit": {
+    description: "A swung oscillator engine of bright hooks, braided motion, and clockwork release.",
+    mood: "Kinetic, witty, airborne",
   },
 };
 

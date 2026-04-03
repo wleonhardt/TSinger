@@ -1,14 +1,19 @@
 import type { Composition } from "../composition";
-import { glassGarden } from "./glassGarden";
-import { lowTideMemory } from "./lowTideMemory";
-import { paperLanterns } from "./paperLanterns";
-import { quietArcade } from "./quietArcade";
+import { cinderCarousel } from "./cinderCarousel";
+import { heliographProcession } from "./heliographProcession";
+import { pinwheelCircuit } from "./pinwheelCircuit";
+import { undertowAtlas } from "./undertowAtlas";
 
-export { glassGarden, quietArcade, lowTideMemory, paperLanterns };
+export {
+  heliographProcession,
+  undertowAtlas,
+  cinderCarousel,
+  pinwheelCircuit,
+};
 
 export const presets: Composition[] = [
-  glassGarden,
-  quietArcade,
-  lowTideMemory,
-  paperLanterns,
+  heliographProcession,
+  undertowAtlas,
+  cinderCarousel,
+  pinwheelCircuit,
 ];
