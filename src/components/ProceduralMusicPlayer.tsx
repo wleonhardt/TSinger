@@ -17,21 +17,9 @@ type TransportUiMeta = {
 };
 
 const presetUiMeta: Record<string, PresetUiMeta> = {
-  "heliograph-procession": {
-    description: "A ceremonial ascent of mirrored light, vaulted harmonies, and disciplined return.",
-    mood: "Radiant, architectural, processional",
-  },
-  "undertow-atlas": {
-    description: "A five-beat horizon song where tidal pull and dark weather keep changing the same map.",
-    mood: "Nocturnal, tidal, searching",
-  },
-  "cinder-carousel": {
-    description: "A haunted ember-waltz: intimate machinery, scorched memory, and a tender final turn.",
-    mood: "Fragile, haunted, intimate",
-  },
-  "pinwheel-circuit": {
-    description: "A swung oscillator engine of bright hooks, braided motion, and clockwork release.",
-    mood: "Kinetic, witty, airborne",
+  stillwater: {
+    description: "A breathing ambient loop in E dorian — warm pads, a gentle melody that touches the raised 6th, and a single drone beneath.",
+    mood: "Reflective, warm, unhurried",
   },
 };
 
