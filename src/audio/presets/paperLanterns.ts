@@ -26,6 +26,8 @@ import {
   placeDraftNotes,
   scaleMotifVelocities,
   withVoiceId,
+  withRhythmRole,
+  withRealization,
 } from "./helpers";
 
 const LANTERN_BPM = 88;
@@ -65,6 +67,7 @@ function buildComposition(params: {
       chords: phrase.chords,
     },
     timing: phrase.timing,
+    rhythm: phrase.rhythm,
   };
 }
 
@@ -204,6 +207,7 @@ const lanternReturnLift = scaleMotifVelocities(
 const lanternHomecoming = scaleMotifVelocities(
   mapMotifSteps(lanternFinalCadence, (step, index) => ({
     ...step,
+    beat: index === 2 ? 2 : step.beat,
     length: index === 4 ? 0.75 : step.length,
     velocity:
       step.velocity !== undefined
@@ -607,7 +611,7 @@ function buildLanternMasterPlan(): PhrasePlan {
       },
     ],
   });
-  const leadLayers = withVoiceId("lead", [
+  const leadLayers = withRealization(withRhythmRole("flow", withVoiceId("lead", [
     {
       kind: "motif" as const,
       id: "lantern-i-call",
@@ -622,6 +626,7 @@ function buildLanternMasterPlan(): PhrasePlan {
       id: "lantern-i-response",
       synth: "softLead" as const,
       motif: lanternResponse,
+      rhythmRole: "response",
       positionOffset: positionAtBarBeat(2, 1),
       register: { min: "D5", max: "C6", anchor: "E5" },
       clampToHarmony: true,
@@ -640,6 +645,7 @@ function buildLanternMasterPlan(): PhrasePlan {
       id: "lantern-i-cadence",
       synth: "softLead" as const,
       motif: lanternHalfCadence,
+      rhythmRole: "cadence",
       positionOffset: positionAtBarBeat(4, 1),
       register: { min: "G5", max: "D6", anchor: "D6" },
       clampToHarmony: true,
@@ -649,7 +655,7 @@ function buildLanternMasterPlan(): PhrasePlan {
       id: "lantern-ii-call",
       synth: "softLead" as const,
       motif: lanternBloomCall,
-      beatOffset: lanternPartStart(1),
+      positionOffset: positionAtBarBeat(5, 1),
       register: { min: "G5", max: "D6", anchor: "A5" },
       clampToHarmony: true,
     },
@@ -658,7 +664,8 @@ function buildLanternMasterPlan(): PhrasePlan {
       id: "lantern-ii-response",
       synth: "softLead" as const,
       motif: lanternBloomResponse,
-      beatOffset: lanternPartStart(1) + 4,
+      rhythmRole: "response",
+      positionOffset: positionAtBarBeat(6, 1),
       register: { min: "E5", max: "D6", anchor: "G5" },
       clampToHarmony: true,
     },
@@ -667,7 +674,8 @@ function buildLanternMasterPlan(): PhrasePlan {
       id: "lantern-ii-lift",
       synth: "softLead" as const,
       motif: lanternBloomLift,
-      beatOffset: lanternPartStart(1) + 8,
+      rhythmRole: "pickup",
+      positionOffset: positionAtBarBeat(7, 1),
       register: { min: "G5", max: "D6", anchor: "A5" },
       clampToHarmony: true,
     },
@@ -676,7 +684,8 @@ function buildLanternMasterPlan(): PhrasePlan {
       id: "lantern-ii-cadence",
       synth: "softLead" as const,
       motif: scaleMotifVelocities(lanternHalfCadence, 0.98),
-      beatOffset: lanternPartStart(1) + 12,
+      rhythmRole: "cadence",
+      positionOffset: positionAtBarBeat(8, 1),
       register: { min: "G5", max: "D6", anchor: "C6" },
       velocityScale: 1.02,
       clampToHarmony: true,
@@ -686,7 +695,8 @@ function buildLanternMasterPlan(): PhrasePlan {
       id: "lantern-iii-drift-response",
       synth: "softLead" as const,
       motif: lanternDriftResponse,
-      beatOffset: lanternPartStart(2),
+      rhythmRole: "response",
+      positionOffset: positionAtBarBeat(9, 1),
       register: { min: "C5", max: "A5", anchor: "E5" },
       velocityScale: 0.88,
       clampToHarmony: true,
@@ -696,7 +706,8 @@ function buildLanternMasterPlan(): PhrasePlan {
       id: "lantern-iii-drift-call",
       synth: "softLead" as const,
       motif: lanternDriftCall,
-      beatOffset: lanternPartStart(2) + 8,
+      rhythmRole: "pickup",
+      positionOffset: positionAtBarBeat(11, 1),
       register: { min: "C5", max: "G5", anchor: "D5" },
       velocityScale: 0.84,
       clampToHarmony: true,
@@ -706,7 +717,7 @@ function buildLanternMasterPlan(): PhrasePlan {
       id: "lantern-iv-call",
       synth: "softLead" as const,
       motif: lanternReturnCall,
-      beatOffset: lanternPartStart(3) + 4,
+      positionOffset: positionAtBarBeat(14, 1),
       register: { min: "E5", max: "D6", anchor: "G5" },
       clampToHarmony: true,
     },
@@ -715,7 +726,8 @@ function buildLanternMasterPlan(): PhrasePlan {
       id: "lantern-iv-lift",
       synth: "softLead" as const,
       motif: lanternReturnLift,
-      beatOffset: lanternPartStart(3) + 8,
+      rhythmRole: "pickup",
+      positionOffset: positionAtBarBeat(15, 1),
       register: { min: "G5", max: "D6", anchor: "A5" },
       clampToHarmony: true,
     },
@@ -724,12 +736,13 @@ function buildLanternMasterPlan(): PhrasePlan {
       id: "lantern-iv-homecoming",
       synth: "softLead" as const,
       motif: lanternHomecoming,
-      beatOffset: lanternPartStart(3) + 12,
+      rhythmRole: "cadence",
+      positionOffset: positionAtBarBeat(16, 1),
       register: { min: "E5", max: "D6", anchor: "C6" },
       velocityScale: 1.04,
       clampToHarmony: true,
     },
-  ]);
+  ])));
 
   return {
     bars: LANTERN_MASTER_BARS,
@@ -741,6 +754,7 @@ function buildLanternMasterPlan(): PhrasePlan {
       {
         id: "lantern-statement",
         role: "statement",
+        barRole: "arrival",
         startBar: 0,
         bars: 4,
         bias: {
@@ -754,6 +768,7 @@ function buildLanternMasterPlan(): PhrasePlan {
       {
         id: "lantern-bloom",
         role: "variation",
+        barRole: "continuation",
         startBar: 4,
         bars: 4,
         bias: {
@@ -767,6 +782,7 @@ function buildLanternMasterPlan(): PhrasePlan {
       {
         id: "lantern-drift",
         role: "shadow",
+        barRole: "transition",
         startBar: 8,
         bars: 4,
         bias: {
@@ -780,6 +796,7 @@ function buildLanternMasterPlan(): PhrasePlan {
       {
         id: "lantern-homecoming",
         role: "return",
+        barRole: "arrival",
         startBar: 12,
         bars: 3,
         bias: {
@@ -793,6 +810,7 @@ function buildLanternMasterPlan(): PhrasePlan {
       {
         id: "lantern-landing",
         role: "cadence",
+        barRole: "cadence",
         startBar: 15,
         bars: 1,
         bias: {
@@ -802,6 +820,17 @@ function buildLanternMasterPlan(): PhrasePlan {
           cadence: 1.36,
         },
         description: "Final lantern landing at the doorway.",
+      },
+    ],
+    cadenceTiming: [
+      {
+        targetBar: 16,
+        targetBeat: 1,
+        mustLandOnStrongBeat: true,
+        minFinalDurationBeats: 0.32,
+        thinBeforeArrival: true,
+        allowPickup: false,
+        maxOrnamentVelocityNearCadence: 0.1,
       },
     ],
     padLayers: [{ synth: "warmPad", voiceId: "pad", velocityScale: 0.86 }],
@@ -850,6 +879,8 @@ function buildLanternMasterPlan(): PhrasePlan {
         id: "lantern-master-plucks",
         synth: "pluckyDust",
         voiceId: "ornament",
+        rhythmRole: "ornament",
+        realization: true,
         notes: buildLanternMasterOrnaments(),
         register: { min: "A5", max: "E6", anchor: "C6" },
         allowOrnaments: true,
@@ -860,6 +891,8 @@ function buildLanternMasterPlan(): PhrasePlan {
         id: "lantern-master-counterline",
         synth: "softLead",
         voiceId: "counterline",
+        rhythmRole: "response",
+        realization: true,
         notes: buildLanternCounterline(),
         register: { min: "D4", max: "A4", anchor: "E4" },
         velocityScale: 0.88,
@@ -870,6 +903,8 @@ function buildLanternMasterPlan(): PhrasePlan {
         id: "lantern-master-bells",
         synth: "glassBell",
         voiceId: "bells",
+        rhythmRole: "punctuation",
+        realization: true,
         notes: bells,
         register: { min: "G5", max: "E6", anchor: "C6" },
         clampToHarmony: false,
@@ -879,6 +914,8 @@ function buildLanternMasterPlan(): PhrasePlan {
         id: "lantern-master-bass",
         synth: "roundBass",
         voiceId: "bass",
+        rhythmRole: "anchor",
+        realization: true,
         notes: buildLanternMasterBass(harmony),
         register: { min: "C2", max: "E3", anchor: "C3" },
         clampToHarmony: true,

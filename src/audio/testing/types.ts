@@ -1,5 +1,6 @@
 import type { ChordQuality, Composition, SynthName } from "../composition";
 import type { SectionRole, VoiceId } from "../metadata";
+import type { BarRole, RhythmCoherenceAnalysis, RhythmRole } from "../authoring/rhythm";
 import type { TimingMetadata } from "../authoring/timing";
 
 export type WindowedSeries = number[];
@@ -36,6 +37,7 @@ export type ExpandedScheduledEvent = {
   sourceIndex: number;
   synth: SynthName;
   voiceId: VoiceId;
+  rhythmRole?: RhythmRole;
   layerId?: string;
   role: ExpandedEventRole;
   pitch: string;
@@ -45,6 +47,7 @@ export type ExpandedScheduledEvent = {
   durationBeats: number;
   velocity: number;
   barIndex: number;
+  barRole?: BarRole;
   sectionId?: string;
   sectionRole?: SectionRole;
   chordRoot?: string;
@@ -114,6 +117,7 @@ export type SymbolicAnalysis = {
   cadenceStrengthByBar: number[];
   duplicateEventWarnings: string[];
   timing: TimingMetadata;
+  rhythm: RhythmCoherenceAnalysis;
 };
 
 export type AudioFeatureAnalysis = {

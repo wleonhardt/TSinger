@@ -40,6 +40,7 @@ function buildComposition(params: {
       chords: phrase.chords,
     },
     timing: phrase.timing,
+    rhythm: phrase.rhythm,
   };
 }
 

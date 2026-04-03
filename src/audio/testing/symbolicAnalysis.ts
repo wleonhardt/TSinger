@@ -1,4 +1,5 @@
 import type { Composition } from "../composition";
+import { analyzeRhythmCoherence } from "../authoring/rhythm";
 import { isChordTone, isScaleTone } from "../authoring/harmony";
 import { describeSwingProfile } from "../authoring/timing";
 import { getPitchClass, midiToNote } from "../theory";
@@ -510,6 +511,24 @@ export function analyzeSymbolically(
     beatsPerBar: composition.beatsPerBar,
     cadenceStrengthByBar,
   });
+  const timing =
+    composition.timing ?? {
+      meter: { beatsPerBar: composition.beatsPerBar, beatUnit: 4 },
+      swing: { kind: "straight" },
+      summary: `${composition.beatsPerBar}/4 meter, ${describeSwingProfile({ kind: "straight" })}.`,
+      symbolicPlacementCount: 0,
+      insights: [],
+      issues: [],
+    };
+  const rhythm =
+    composition.rhythm ??
+    analyzeRhythmCoherence(
+      composition.phrase.notes,
+      timing.meter,
+      composition.phrase.bars,
+      composition.sections ?? [],
+      undefined,
+    );
 
   return {
     noteCount: composition.phrase.notes.length,
@@ -541,14 +560,7 @@ export function analyzeSymbolically(
       weightSum > 0 ? Number((weightedMidiSum / weightSum).toFixed(3)) : null,
     cadenceStrengthByBar,
     duplicateEventWarnings,
-    timing:
-      composition.timing ?? {
-        meter: { beatsPerBar: composition.beatsPerBar, beatUnit: 4 },
-        swing: { kind: "straight" },
-        summary: `${composition.beatsPerBar}/4 meter, ${describeSwingProfile({ kind: "straight" })}.`,
-        symbolicPlacementCount: 0,
-        insights: [],
-        issues: [],
-      },
+    timing,
+    rhythm,
   };
 }

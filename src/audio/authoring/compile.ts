@@ -16,6 +16,20 @@ import {
   shouldOrnament,
 } from "./arrangement";
 import { compileSections, findSectionAtBeat } from "./sections";
+import { defaultRealization, realizeDrafts } from "./realization";
+import {
+  analyzeRhythmCoherence,
+  computeRhythmVelocityFactor,
+  getCadenceWindowAtBeat,
+  getBarRoleAtBeat,
+  inferRhythmRole,
+  resolveCadenceWindows,
+  resolveBarRole,
+  rhythmOrnamentDensityFactor,
+  type CadenceTimingContract,
+  type ResolvedCadenceWindow,
+  type RhythmRole,
+} from "./rhythm";
 import {
   addSpan,
   absoluteBeatToPosition,
@@ -573,18 +587,75 @@ function pickTargetedHarmonicPitch(
   });
 }
 
+function normalizeCadenceContracts(
+  plan: PhrasePlan,
+): CadenceTimingContract[] {
+  if (!plan.cadenceTiming) {
+    return [];
+  }
+
+  return Array.isArray(plan.cadenceTiming)
+    ? plan.cadenceTiming
+    : [plan.cadenceTiming];
+}
+
+function resolveDraftRhythmRole(
+  draft: PatternNoteDraft,
+  layer: PhraseLayerPlan,
+): RhythmRole | undefined {
+  const voiceId = draft.voiceId ?? layer.voiceId;
+  return inferRhythmRole(voiceId, layer.synth, draft.rhythmRole ?? layer.rhythmRole);
+}
+
 function shouldKeepDraft(
   layer: PhraseLayerPlan,
   draft: PatternNoteDraft,
   plan: PhrasePlan,
   sections: CompiledSection[],
+  cadenceWindows: ResolvedCadenceWindow[],
+  rhythmRole: RhythmRole | undefined,
 ): boolean {
+  const meter = {
+    beatsPerBar: plan.beatsPerBar,
+    beatUnit: 4,
+  } satisfies MeterSpec;
+  const barRole = getBarRoleAtBeat(draft.beat, meter, sections);
+
   if (!draft.ornament) {
     return true;
   }
 
   if (layer.allowOrnaments === false) {
     return false;
+  }
+
+  const cadenceWindow = getCadenceWindowAtBeat(draft.beat, cadenceWindows);
+  if (cadenceWindow) {
+    if (
+      cadenceWindow.thinBeforeArrival &&
+      cadenceWindow.preCadenceStartBeat !== null &&
+      draft.beat >= cadenceWindow.preCadenceStartBeat - 0.01 &&
+      draft.beat < cadenceWindow.cadenceStartBeat - 0.01
+    ) {
+      return false;
+    }
+
+    if (draft.beat >= cadenceWindow.cadenceStartBeat - 0.01) {
+      if (rhythmOrnamentDensityFactor(barRole, rhythmRole) <= 0.3) {
+        return false;
+      }
+
+      if (
+        !cadenceWindow.allowPickup &&
+        draft.beat < cadenceWindow.targetAbsoluteBeat - 0.01
+      ) {
+        return false;
+      }
+
+      if (draft.beat >= cadenceWindow.targetAbsoluteBeat - 0.01) {
+        return false;
+      }
+    }
   }
 
   if (getDensityAtBeat(plan.arrangement, draft.beat, sections) < 0.45) {
@@ -723,17 +794,51 @@ function applyLayerVelocity(
   draft: PatternNoteDraft,
   plan: PhrasePlan,
   sections: CompiledSection[],
+  rhythmRole: RhythmRole | undefined,
+  barRole: ReturnType<typeof resolveBarRole>,
+  cadenceWindows: ResolvedCadenceWindow[],
 ): number {
+  const meter = {
+    beatsPerBar: plan.beatsPerBar,
+    beatUnit: 4,
+  } satisfies MeterSpec;
   const density = getDensityAtBeat(plan.arrangement, draft.beat, sections);
   const cadence = getCadentialWeightAtBeat(plan.arrangement, draft.beat, sections);
   const baseVelocity = draft.velocity ?? 0.5;
   const scale = layer.velocityScale ?? 1;
+  const cadenceWindow = getCadenceWindowAtBeat(draft.beat, cadenceWindows);
+  let velocity =
+    baseVelocity *
+    scale *
+    (0.92 + cadence * 0.12) *
+    Math.min(1.1, 0.85 + density * 0.2) *
+    computeRhythmVelocityFactor(draft.beat, meter, rhythmRole, barRole);
 
-  return clamp(
-    baseVelocity * scale * (0.92 + cadence * 0.12) * Math.min(1.1, 0.85 + density * 0.2),
-    0.04,
-    1,
-  );
+  if (draft.ornament) {
+    velocity *= rhythmOrnamentDensityFactor(barRole, rhythmRole);
+  }
+
+  if (
+    cadenceWindow &&
+    cadenceWindow.thinBeforeArrival &&
+    cadenceWindow.preCadenceStartBeat !== null &&
+    draft.beat >= cadenceWindow.preCadenceStartBeat - 0.01 &&
+    draft.beat < cadenceWindow.cadenceStartBeat - 0.01 &&
+    (rhythmRole === "ornament" || rhythmRole === "punctuation")
+  ) {
+    velocity *= 0.72;
+  }
+
+  if (
+    cadenceWindow &&
+    draft.beat >= cadenceWindow.cadenceStartBeat - 0.01 &&
+    (rhythmRole === "ornament" || rhythmRole === "punctuation") &&
+    cadenceWindow.maxOrnamentVelocityNearCadence !== undefined
+  ) {
+    velocity = Math.min(velocity, cadenceWindow.maxOrnamentVelocityNearCadence);
+  }
+
+  return clamp(velocity, 0.04, 1);
 }
 
 function compileDraftNotes(
@@ -746,11 +851,36 @@ function compileDraftNotes(
   timingState: TimingCompilationState,
 ): NoteEvent[] {
   const sortedDrafts = [...drafts].sort((left, right) => left.beat - right.beat);
+  const layerRhythmRole = inferRhythmRole(layer.voiceId, layer.synth, layer.rhythmRole);
+  const realizationSpec =
+    layer.realization === true
+      ? defaultRealization(layerRhythmRole)
+      : layer.realization;
+  const realizedDrafts = realizationSpec
+    ? realizeDrafts(sortedDrafts, realizationSpec, timingState.meter, sections, layerId)
+    : sortedDrafts;
   const notes: NoteEvent[] = [];
+  const cadenceWindows = resolveCadenceWindows(
+    normalizeCadenceContracts(plan),
+    timingState.meter,
+    plan.bars,
+  );
   let previousPitch: string | null = null;
 
-  for (const draft of sortedDrafts) {
-    if (!shouldKeepDraft(layer, draft, plan, sections)) {
+  for (const draft of realizedDrafts) {
+    const section = findSectionAtBeat(sections, draft.beat);
+    const barRole = resolveBarRole(section ?? null);
+    const voiceId = resolveVoiceId(
+      draft.voiceId ?? layer.voiceId,
+      layer.synth,
+      { ornament: draft.ornament === true },
+    );
+    const rhythmRole = resolveDraftRhythmRole(draft, {
+      ...layer,
+      voiceId,
+    });
+
+    if (!shouldKeepDraft(layer, draft, plan, sections, cadenceWindows, rhythmRole)) {
       continue;
     }
 
@@ -767,12 +897,6 @@ function compileDraftNotes(
       continue;
     }
 
-    const section = findSectionAtBeat(sections, draft.beat);
-    const voiceId = resolveVoiceId(
-      draft.voiceId ?? layer.voiceId,
-      layer.synth,
-      { ornament: draft.ornament === true },
-    );
     previousPitch = resolved.pitch;
     resolvePatternIntent(draft.timingIntent ?? draft.at?.intent, draft.beat, layerId, timingState);
     notes.push({
@@ -781,9 +905,21 @@ function compileDraftNotes(
       pitch: resolved.pitch,
       glideTo: resolved.glideTo,
       synth: layer.synth,
-      velocity: roundToGrid(applyLayerVelocity(layer, draft, plan, sections)),
+      velocity: roundToGrid(
+        applyLayerVelocity(
+          layer,
+          draft,
+          plan,
+          sections,
+          rhythmRole,
+          barRole,
+          cadenceWindows,
+        ),
+      ),
       pan: roundToGrid((draft.pan ?? 0) + (layer.pan ?? 0)),
       voiceId,
+      rhythmRole,
+      barRole,
       layerId,
       sectionId: section?.id,
       sectionRole: section?.role,
@@ -823,6 +959,7 @@ export function compileMotifToNotes(
         toneIntent: step.toneIntent,
         ornament: step.ornament,
         voiceId: step.voiceId,
+        rhythmRole: step.rhythmRole,
         timingIntent: step.timingIntent,
       });
     }
@@ -922,6 +1059,7 @@ export function compilePhrasePlan(plan: PhrasePlan): CompiledPhrase {
   const timingState = createTimingState(plan);
   const normalizedPlan = normalizePhrasePlan(plan, timingState);
   const sections = compileSections(normalizedPlan);
+  const cadenceContracts = normalizeCadenceContracts(normalizedPlan);
   const harmony = expandHarmonyPlan(normalizedPlan);
   const noteLayers = normalizedPlan.noteLayers ?? [];
   const chords: ChordEvent[] =
@@ -981,6 +1119,13 @@ export function compilePhrasePlan(plan: PhrasePlan): CompiledPhrase {
     }),
   );
   validateCompiledTimingBounds(notes, chords, normalizedPlan, timingState);
+  const rhythm = analyzeRhythmCoherence(
+    notes,
+    timingState.meter,
+    normalizedPlan.bars,
+    sections,
+    cadenceContracts,
+  );
   if (timingState.symbolicPlacementCount > 0) {
     timingState.insights.push({
       kind: "boundary",
@@ -993,6 +1138,7 @@ export function compilePhrasePlan(plan: PhrasePlan): CompiledPhrase {
     chords: normalizeAndSortChords(chords),
     sections,
     timing: buildTimingMetadata(timingState),
+    rhythm,
   };
 }
 

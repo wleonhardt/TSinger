@@ -83,6 +83,7 @@ export function collectExpandedNoteEvents(composition: Composition): ExpandedSch
         sourceIndex: index,
         synth: note.synth,
         voiceId,
+        rhythmRole: note.rhythmRole,
         layerId: note.layerId,
         role: getRoleForVoice(voiceId, note.synth),
         pitch: note.pitch,
@@ -92,6 +93,7 @@ export function collectExpandedNoteEvents(composition: Composition): ExpandedSch
         durationBeats: Math.max(0, note.length),
         velocity: note.velocity ?? 0.72,
         barIndex: Math.max(0, Math.floor(note.beat / composition.beatsPerBar)),
+        barRole: note.barRole,
         sectionId: note.sectionId,
         sectionRole: note.sectionRole,
       };
@@ -139,6 +141,7 @@ function expandChordEvent(
       durationBeats,
       velocity: (chord.velocity ?? 0.3) * 0.94,
       barIndex: Math.max(0, Math.floor(chord.beat / composition.beatsPerBar)),
+      barRole: undefined,
       sectionId: chord.sectionId,
       sectionRole: chord.sectionRole,
       chordRoot: chord.root,

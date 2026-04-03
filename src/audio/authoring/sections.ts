@@ -28,6 +28,7 @@ export function compileSections(plan: PhrasePlan): CompiledSection[] {
       return {
         id: section.id,
         role: section.role,
+        barRole: section.barRole,
         startBar: safeStartBar,
         bars: safeBars,
         bias,

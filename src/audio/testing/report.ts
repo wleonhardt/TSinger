@@ -56,6 +56,7 @@ function buildOverviewLines(analysis: PresetAnalysis): string[] {
     `- Chord-tone ratio: ${(analysis.symbolic.chordToneRatio * 100).toFixed(1)}%; repeated-pitch ratio ${(analysis.symbolic.repeatedPitchRatio * 100).toFixed(1)}%`,
     `- Mean novelty by bar: ${average(analysis.audio.noveltyByBar).toFixed(4)}; final cadence strength ${finalCadence.toFixed(3)}`,
     `- Timing: ${analysis.symbolic.timing.summary} ${analysis.symbolic.timing.symbolicPlacementCount} symbolic placements compiled.`,
+    `- Rhythm: ${analysis.symbolic.rhythm.summary}`,
   ];
 
   if (strongestCadenceSection) {
@@ -127,6 +128,16 @@ function buildWarningLines(analysis: PresetAnalysis): string[] {
       .slice(0, 2)
       .map((warning) => `- [info] duplicate-events: ${warning}`),
   );
+  lines.push(
+    ...analysis.symbolic.rhythm.issues
+      .slice(0, 3)
+      .map((issue) => `- [${issue.level}] rhythm: ${issue.message}`),
+  );
+  lines.push(
+    ...analysis.symbolic.rhythm.cadenceContractIssues
+      .slice(0, 2)
+      .map((issue) => `- [warning] cadence-contract: ${issue.message}`),
+  );
 
   if (lines.length === 0) {
     return ["- No validation warnings exceeded the current thresholds."];
@@ -146,6 +157,38 @@ function buildTimingLines(analysis: PresetAnalysis): string[] {
     lines.push(...timing.insights.slice(0, 5).map((insight) => `- ${insight.message}`));
   } else {
     lines.push("- No explicit timing annotations were attached to this preset.");
+  }
+
+  return lines;
+}
+
+function buildRhythmLines(analysis: PresetAnalysis): string[] {
+  const rhythm = analysis.symbolic.rhythm;
+  const lines = [
+    `- ${rhythm.summary}`,
+    `- Bar-role coverage ${(rhythm.barRoleCoverage * 100).toFixed(0)}%; rhythm-role coverage ${(rhythm.rhythmRoleCoverage * 100).toFixed(0)}%.`,
+    `- Anchor beat-1 recovery ${(rhythm.anchorDownbeatPresence * 100).toFixed(0)}%; offbeat-only bars ${rhythm.offbeatOnlyBarCount}.`,
+  ];
+
+  if (
+    rhythm.arrivalStrongBeatAverage !== null &&
+    rhythm.continuationStrongBeatAverage !== null
+  ) {
+    lines.push(
+      `- Arrival/cadence bars average ${rhythm.arrivalStrongBeatAverage.toFixed(2)} strong-beat articulation vs ${rhythm.continuationStrongBeatAverage.toFixed(2)} in continuation bars.`,
+    );
+  }
+
+  if (rhythm.insights.length > 0) {
+    lines.push(...rhythm.insights.slice(0, 4).map((insight) => `- ${insight}`));
+  }
+
+  if (rhythm.cadenceContractIssues.length > 0) {
+    lines.push(
+      ...rhythm.cadenceContractIssues
+        .slice(0, 2)
+        .map((issue) => `- Cadence contract: ${issue.message}`),
+    );
   }
 
   return lines;
@@ -246,6 +289,38 @@ export function buildSuggestedMusicalEdits(analysis: PresetAnalysis): string[] {
     );
   }
 
+  if (analysis.symbolic.rhythm.metricalDriftWarningBars.length > 0) {
+    suggestions.push(
+      `Reassert pulse hierarchy around bar ${analysis.symbolic.rhythm.metricalDriftWarningBars[0]! + 1} with at least one clear strong-beat attack from the anchor or cadence-bearing voice.`,
+    );
+  }
+
+  if (
+    analysis.symbolic.rhythm.anchorDownbeatPresence > 0 &&
+    analysis.symbolic.rhythm.anchorDownbeatPresence < 0.6
+  ) {
+    suggestions.push(
+      "Give the anchor layer more beat-1 recoveries so the loop keeps its bar gravity after the opening measures.",
+    );
+  }
+
+  if (analysis.symbolic.rhythm.cadenceContractSatisfied === false) {
+    suggestions.push(
+      "Tighten the cadence target by thinning the pre-cadential bar and ensuring the arrival voice lands with enough duration on the chosen beat.",
+    );
+  }
+
+  if (
+    analysis.symbolic.rhythm.arrivalStrongBeatAverage !== null &&
+    analysis.symbolic.rhythm.continuationStrongBeatAverage !== null &&
+    analysis.symbolic.rhythm.arrivalStrongBeatAverage <
+      analysis.symbolic.rhythm.continuationStrongBeatAverage + 0.04
+  ) {
+    suggestions.push(
+      "Differentiate statement/arrival bars from continuation bars rhythmically so returns feel planted instead of merely repeated.",
+    );
+  }
+
   if (analysis.audio.clippingSampleCount > 0) {
     suggestions.push(
       "Reduce overlapping peak moments or ease the loudest simultaneous entries so the rendered mix keeps clean headroom.",
@@ -285,6 +360,10 @@ export function buildPresetReport(analysis: PresetAnalysis): string {
     "## Timing",
     "",
     ...buildTimingLines(analysis),
+    "",
+    "## Rhythm",
+    "",
+    ...buildRhythmLines(analysis),
     "",
     "## Warnings",
     "",

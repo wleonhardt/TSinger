@@ -6,6 +6,13 @@ import type {
 } from "../composition";
 import type { CompiledSection, SectionPlanItem, VoiceId } from "../metadata";
 import type {
+  CadenceTimingContract,
+  RhythmCoherenceAnalysis,
+  RhythmProfile,
+  RhythmRole,
+} from "./rhythm";
+import type { RealizationRule, RealizationSpec } from "./realization";
+import type {
   MeterSpec,
   Position,
   Span,
@@ -16,6 +23,14 @@ import type {
 
 export type ToneIntent = "chord" | "scale" | "color" | "passing";
 export type { SectionPlanItem, VoiceId };
+export type {
+  CadenceTimingContract,
+  RhythmCoherenceAnalysis,
+  RealizationRule,
+  RealizationSpec,
+  RhythmProfile,
+  RhythmRole,
+};
 export type {
   MeterSpec,
   Position,
@@ -54,6 +69,7 @@ export type MotifStep = {
   toneIntent?: ToneIntent;
   ornament?: boolean;
   voiceId?: VoiceId;
+  rhythmRole?: RhythmRole;
   timingIntent?: TimingIntent;
 };
 
@@ -78,6 +94,7 @@ export type PatternNoteDraft = {
   ornament?: boolean;
   glideToDegree?: number;
   voiceId?: VoiceId;
+  rhythmRole?: RhythmRole;
   timingIntent?: TimingIntent;
 };
 
@@ -90,6 +107,9 @@ type LayerPlanBase = {
   pan?: number;
   clampToHarmony?: boolean;
   allowOrnaments?: boolean;
+  rhythmRole?: RhythmRole;
+  rhythmProfile?: RhythmProfile;
+  realization?: RealizationSpec | true;
 };
 
 export type MotifLayerPlan = LayerPlanBase & {
@@ -145,6 +165,7 @@ export type PhrasePlan = {
   padLayers?: PadLayerPlan[];
   noteLayers?: PhraseLayerPlan[];
   arrangement?: ArrangementSpec;
+  cadenceTiming?: CadenceTimingContract | CadenceTimingContract[];
 };
 
 export type CompiledPhrase = {
@@ -152,6 +173,7 @@ export type CompiledPhrase = {
   chords: ChordEvent[];
   sections: CompiledSection[];
   timing?: TimingMetadata;
+  rhythm?: RhythmCoherenceAnalysis;
 };
 
 export type ValidationIssue = {

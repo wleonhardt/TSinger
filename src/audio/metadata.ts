@@ -1,3 +1,5 @@
+import type { BarRole } from "./authoring/rhythm";
+
 export type VoiceId =
   | "lead"
   | "counterline"
@@ -31,6 +33,7 @@ export type SectionBias = {
 export type SectionPlanItem = {
   id: string;
   role: SectionRole;
+  barRole?: BarRole;
   startBar: number;
   bars: number;
   bias?: SectionBias;

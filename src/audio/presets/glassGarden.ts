@@ -24,6 +24,8 @@ import {
   mapMotifSteps,
   scaleMotifVelocities,
   withVoiceId,
+  withRhythmRole,
+  withRealization,
 } from "./helpers";
 
 const GLASS_BPM = 72;
@@ -63,6 +65,7 @@ function buildComposition(params: {
       chords: phrase.chords,
     },
     timing: phrase.timing,
+    rhythm: phrase.rhythm,
   };
 }
 
@@ -794,7 +797,7 @@ function buildGlassMasterPlan(): PhrasePlan {
       },
     ],
   });
-  const leadLayers = withVoiceId("lead", [
+  const leadLayers = withRealization(withRhythmRole("flow", withVoiceId("lead", [
     {
       kind: "motif" as const,
       id: "glass-i-call",
@@ -809,6 +812,7 @@ function buildGlassMasterPlan(): PhrasePlan {
       id: "glass-i-answer",
       synth: "softLead" as const,
       motif: glassMasterAnswer,
+      rhythmRole: "response",
       positionOffset: positionAtBarBeat(2, 1),
       register: { min: "F5", max: "D6", anchor: "A5" },
       clampToHarmony: true,
@@ -818,6 +822,7 @@ function buildGlassMasterPlan(): PhrasePlan {
       id: "glass-i-vigil",
       synth: "softLead" as const,
       motif: glassDominantFigure,
+      rhythmRole: "suspension",
       positionOffset: positionAtBarBeat(3, 1),
       register: { min: "E5", max: "B5", anchor: "G#5" },
       clampToHarmony: false,
@@ -827,6 +832,7 @@ function buildGlassMasterPlan(): PhrasePlan {
       id: "glass-i-close",
       synth: "softLead" as const,
       motif: glassMasterBloomCadence,
+      rhythmRole: "cadence",
       positionOffset: positionAtBarBeat(4, 1),
       register: { min: "E5", max: "C6", anchor: "A5" },
       clampToHarmony: true,
@@ -836,7 +842,7 @@ function buildGlassMasterPlan(): PhrasePlan {
       id: "glass-ii-bloom-call",
       synth: "softLead" as const,
       motif: glassMasterBloomCall,
-      beatOffset: glassPartStart(1),
+      positionOffset: positionAtBarBeat(5, 1),
       register: { min: "F5", max: "D6", anchor: "A5" },
       clampToHarmony: true,
     },
@@ -845,7 +851,8 @@ function buildGlassMasterPlan(): PhrasePlan {
       id: "glass-ii-bloom-answer",
       synth: "softLead" as const,
       motif: glassMasterBloomAnswer,
-      beatOffset: glassPartStart(1) + 3,
+      rhythmRole: "response",
+      positionOffset: positionAtBarBeat(6, 1),
       register: { min: "E5", max: "D6", anchor: "C6" },
       clampToHarmony: true,
     },
@@ -854,7 +861,8 @@ function buildGlassMasterPlan(): PhrasePlan {
       id: "glass-ii-spiral",
       synth: "softLead" as const,
       motif: glassMasterSpiral,
-      beatOffset: glassPartStart(1) + 6,
+      rhythmRole: "pickup",
+      positionOffset: positionAtBarBeat(7, 1),
       register: { min: "F5", max: "D6", anchor: "B5" },
       clampToHarmony: true,
     },
@@ -863,7 +871,8 @@ function buildGlassMasterPlan(): PhrasePlan {
       id: "glass-ii-bloom-close",
       synth: "softLead" as const,
       motif: glassMasterBloomCadence,
-      beatOffset: glassPartStart(1) + 9,
+      rhythmRole: "cadence",
+      positionOffset: positionAtBarBeat(8, 1),
       register: { min: "E5", max: "D6", anchor: "A5" },
       velocityScale: 1.02,
       clampToHarmony: true,
@@ -873,7 +882,8 @@ function buildGlassMasterPlan(): PhrasePlan {
       id: "glass-iii-mirror-call",
       synth: "softLead" as const,
       motif: glassMasterMirrorSubject,
-      beatOffset: glassPartStart(2),
+      rhythmRole: "response",
+      positionOffset: positionAtBarBeat(9, 1),
       register: { min: "C5", max: "A5", anchor: "E5" },
       clampToHarmony: true,
     },
@@ -882,7 +892,8 @@ function buildGlassMasterPlan(): PhrasePlan {
       id: "glass-iii-mirror-answer",
       synth: "softLead" as const,
       motif: glassMasterMirrorAnswer,
-      beatOffset: glassPartStart(2) + 3,
+      rhythmRole: "suspension",
+      positionOffset: positionAtBarBeat(10, 1),
       register: { min: "B4", max: "G5", anchor: "D5" },
       clampToHarmony: true,
     },
@@ -891,7 +902,8 @@ function buildGlassMasterPlan(): PhrasePlan {
       id: "glass-iii-vigil",
       synth: "softLead" as const,
       motif: glassMasterVigil,
-      beatOffset: glassPartStart(2) + 6,
+      rhythmRole: "suspension",
+      positionOffset: positionAtBarBeat(11, 1),
       register: { min: "C5", max: "A5", anchor: "E5" },
       clampToHarmony: false,
     },
@@ -900,7 +912,7 @@ function buildGlassMasterPlan(): PhrasePlan {
       id: "glass-iv-return-call",
       synth: "softLead" as const,
       motif: glassMasterReturnSubject,
-      beatOffset: glassPartStart(3) + 3,
+      positionOffset: positionAtBarBeat(14, 1),
       register: { min: "G5", max: "D6", anchor: "A5" },
       clampToHarmony: true,
     },
@@ -909,7 +921,8 @@ function buildGlassMasterPlan(): PhrasePlan {
       id: "glass-iv-return-vow",
       synth: "softLead" as const,
       motif: glassMasterReturnVow,
-      beatOffset: glassPartStart(3) + 6,
+      rhythmRole: "pickup",
+      positionOffset: positionAtBarBeat(15, 1),
       register: { min: "F5", max: "C6", anchor: "B5" },
       clampToHarmony: false,
     },
@@ -918,11 +931,12 @@ function buildGlassMasterPlan(): PhrasePlan {
       id: "glass-iv-crown",
       synth: "softLead" as const,
       motif: glassMasterCrown,
-      beatOffset: glassPartStart(3) + 9,
+      rhythmRole: "cadence",
+      positionOffset: positionAtBarBeat(16, 1),
       register: { min: "E5", max: "C6", anchor: "A5" },
       clampToHarmony: true,
     },
-  ]);
+  ])));
 
   return {
     bars: GLASS_MASTER_BARS,
@@ -934,6 +948,7 @@ function buildGlassMasterPlan(): PhrasePlan {
       {
         id: "glass-threshold",
         role: "statement",
+        barRole: "arrival",
         startBar: 0,
         bars: 4,
         bias: {
@@ -947,6 +962,7 @@ function buildGlassMasterPlan(): PhrasePlan {
       {
         id: "glass-bloom",
         role: "variation",
+        barRole: "continuation",
         startBar: 4,
         bars: 4,
         bias: {
@@ -960,6 +976,7 @@ function buildGlassMasterPlan(): PhrasePlan {
       {
         id: "glass-hollow",
         role: "shadow",
+        barRole: "transition",
         startBar: 8,
         bars: 4,
         bias: {
@@ -973,6 +990,7 @@ function buildGlassMasterPlan(): PhrasePlan {
       {
         id: "glass-return",
         role: "return",
+        barRole: "arrival",
         startBar: 12,
         bars: 3,
         bias: {
@@ -986,6 +1004,7 @@ function buildGlassMasterPlan(): PhrasePlan {
       {
         id: "glass-seal",
         role: "cadence",
+        barRole: "cadence",
         startBar: 15,
         bars: 1,
         bias: {
@@ -995,6 +1014,17 @@ function buildGlassMasterPlan(): PhrasePlan {
           cadence: 1.34,
         },
         description: "The door finally closes on A.",
+      },
+    ],
+    cadenceTiming: [
+      {
+        targetBar: 16,
+        targetBeat: 1,
+        mustLandOnStrongBeat: true,
+        minFinalDurationBeats: 0.5,
+        thinBeforeArrival: true,
+        allowPickup: false,
+        maxOrnamentVelocityNearCadence: 0.13,
       },
     ],
     padLayers: [{ synth: "warmPad", voiceId: "pad", velocityScale: 0.82 }],
@@ -1043,6 +1073,8 @@ function buildGlassMasterPlan(): PhrasePlan {
         id: "glass-master-counterpoint",
         synth: "softLead",
         voiceId: "counterline",
+        rhythmRole: "response",
+        realization: true,
         notes: buildGlassMasterCounterpoint(),
         register: { min: "A3", max: "E5", anchor: "A4" },
         velocityScale: 0.82,
@@ -1053,6 +1085,8 @@ function buildGlassMasterPlan(): PhrasePlan {
         id: "glass-master-bass",
         synth: "roundBass",
         voiceId: "bass",
+        rhythmRole: "anchor",
+        realization: true,
         notes: buildGlassMasterBass(harmony),
         register: { min: "E2", max: "F3", anchor: "A2" },
         clampToHarmony: true,
@@ -1062,6 +1096,8 @@ function buildGlassMasterPlan(): PhrasePlan {
         id: "glass-undertow",
         synth: "breathingDrone",
         voiceId: "drone",
+        rhythmRole: "anchor",
+        realization: true,
         notes: buildGlassUndertow(),
         register: { min: "C3", max: "E4", anchor: "C4" },
         velocityScale: 0.88,
@@ -1072,6 +1108,8 @@ function buildGlassMasterPlan(): PhrasePlan {
         id: "glass-master-bells",
         synth: "glassBell",
         voiceId: "bells",
+        rhythmRole: "punctuation",
+        realization: true,
         notes: bells,
         register: { min: "G5", max: "A6", anchor: "E6" },
         clampToHarmony: false,

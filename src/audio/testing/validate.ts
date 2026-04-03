@@ -42,6 +42,8 @@ export function validatePresetAnalysis(analysis: PresetAnalysis): ValidationWarn
   const timingWarnings = analysis.symbolic.timing.issues.filter(
     (issue) => issue.level === "warning" || issue.level === "error",
   );
+  const rhythm = analysis.symbolic.rhythm;
+  const rhythmWarnings = rhythm.issues.filter((issue) => issue.level === "warning");
 
   pushIf(warnings, maxDensity > 2.6, {
     code: "dense-bar",
@@ -132,6 +134,48 @@ export function validatePresetAnalysis(analysis: PresetAnalysis): ValidationWarn
       code: "timing-alignment",
       severity: timingWarnings.some((issue) => issue.level === "error") ? "error" : "warning",
       message: timingWarnings[0]!.message,
+    });
+  }
+
+  pushIf(warnings, rhythm.metricalDriftWarningBars.length > 0, {
+    code: "metrical-drift",
+    severity: "warning",
+    message: `Strong-beat articulation weakens across consecutive bars beginning around bar ${rhythm.metricalDriftWarningBars[0]! + 1}.`,
+  });
+
+  pushIf(warnings, rhythm.offbeatOnlyBarCount > Math.max(1, analysis.bars * 0.2), {
+    code: "offbeat-only-stretch",
+    severity: "warning",
+    message: `${rhythm.offbeatOnlyBarCount} active bars avoid strong-beat attacks entirely, which can loosen pulse authority over the loop.`,
+  });
+
+  pushIf(
+    warnings,
+    rhythm.anchorDownbeatPresence > 0 && rhythm.anchorDownbeatPresence < 0.55,
+    {
+      code: "weak-anchor-recovery",
+      severity: "warning",
+      message: `The anchor voice only recovers beat 1 in ${(rhythm.anchorDownbeatPresence * 100).toFixed(0)}% of its active bars.`,
+    },
+  );
+
+  pushIf(
+    warnings,
+    rhythm.cadenceContractSatisfied === false,
+    {
+      code: "cadence-contract",
+      severity: "warning",
+      message:
+        rhythm.cadenceContractIssues[0]?.message ??
+        "One or more cadence timing contracts were not satisfied.",
+    },
+  );
+
+  if (rhythmWarnings.length > 0) {
+    warnings.push({
+      code: "rhythm-coherence",
+      severity: "warning",
+      message: rhythmWarnings[0]!.message,
     });
   }
 

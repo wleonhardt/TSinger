@@ -4,7 +4,13 @@ import {
   type MeterSpec,
   type Span,
 } from "../authoring/timing";
-import type { Motif, MotifStep, PatternNoteDraft, VoiceId } from "../authoring/types";
+import type {
+  Motif,
+  MotifStep,
+  PatternNoteDraft,
+  RhythmRole,
+  VoiceId,
+} from "../authoring/types";
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -76,4 +82,21 @@ export function withVoiceId<T>(
         ? ((item as { voiceId?: VoiceId }).voiceId ?? voiceId)
         : voiceId,
   }));
+}
+
+export function withRhythmRole<T>(
+  rhythmRole: RhythmRole,
+  items: T[],
+): Array<T & { rhythmRole: RhythmRole }> {
+  return items.map((item) => ({
+    ...item,
+    rhythmRole:
+      item && typeof item === "object" && "rhythmRole" in (item as object)
+        ? ((item as { rhythmRole?: RhythmRole }).rhythmRole ?? rhythmRole)
+        : rhythmRole,
+  }));
+}
+
+export function withRealization<T>(items: T[]): Array<T & { realization: true }> {
+  return items.map((item) => ({ ...item, realization: true as const }));
 }

@@ -1,4 +1,5 @@
 import type { CompiledSection, SectionRole, VoiceId } from "./metadata";
+import type { BarRole, RhythmCoherenceAnalysis, RhythmRole } from "./authoring/rhythm";
 import type { TimingMetadata } from "./authoring/timing";
 
 export type SynthName =
@@ -28,6 +29,8 @@ export type NoteEvent = {
   glideTo?: string;
   pan?: number;
   voiceId?: VoiceId;
+  rhythmRole?: RhythmRole;
+  barRole?: BarRole;
   layerId?: string;
   sectionId?: string;
   sectionRole?: SectionRole;
@@ -67,4 +70,5 @@ export type Composition = {
   loop: boolean;
   sections?: CompiledSection[];
   timing?: TimingMetadata;
+  rhythm?: RhythmCoherenceAnalysis;
 };
